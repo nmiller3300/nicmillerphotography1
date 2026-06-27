@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Supabase Transaction Pooler — used at runtime (serverless-safe)
+  url       = env("DATABASE_URL")
+  // Supabase Direct Connection — used by Prisma Migrate only
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Media ────────────────────────────────────────────────────────────────────
+
+model Media {
+  id           Int      @id @default(autoincrement())
+  title        String
+  caption      String?
+  description  String?
+  alt          String?
+  captureDate  String?  @map("capture_date")
+  location     String?
+  camera       String?
+  categoryId   Int?     @map("category_id")
+  checksum     String   @unique
+  width        Int
+  height       Int
+  aspect       Float
+  orientation  String                    // Landscape | Portrait | Square | Pano
+  fileSize     BigInt   @map("file_size")
+  colorProfile String?  @map("color_profile")
+  exif         Json?
+  masterKey    String   @map("master_key")  // private Blob pathname — never served publicly
+  status       String   @default("draft")   // draft | published | archived
+  featured     Boolean  @default(false)
+  printEnabled Boolean  @default(false) @map("print_enabled")
+  homepage     Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  category     Category?      @relation(fields: [categoryId], references: [id])
+  derivatives  Derivative[]
+  crops        Crop[]
+  prints       Print[]
+  collections  CollectionItem[]
+
+  @@map("media")
+}
+
+model Derivative {
+  id      Int    @id @default(autoincrement())
+  mediaId Int    @map("media_id")
+  format  String // avif | webp | jpeg
+  width   Int
+  url     String
+  bytes   Int
+
+  media   Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, format, width])
+  @@map("derivatives")
+}
+
+model Crop {
+  id       Int    @id @default(autoincrement())
+  mediaId  Int    @map("media_id")
+  context  String // desktop_hero | mobile_hero | portfolio_card | collection_cover | recent_thumb | print_card | social
+  focalX   Float  @default(50) @map("focal_x")
+  focalY   Float  @default(50) @map("focal_y")
+  cropBox  Json?  @map("crop_box")
+  zoom     Float  @default(100)
+
+  media    Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, context])
+  @@map("crops")
+}
+
+// ─── Categories & Collections ─────────────────────────────────────────────────
+
+model Category {
+  id    Int     @id @default(autoincrement())
+  name  String
+  slug  String  @unique
+  order Int     @default(0)
+
+  media Media[]
+
+  @@map("categories")
+}
+
+model Collection {
+  id           Int              @id @default(autoincrement())
+  title        String
+  description  String?
+  coverMediaId Int?             @map("cover_media_id")
+  published    Boolean          @default(false)
+  homepage     Boolean          @default(false)
+  order        Int              @default(0)
+
+  items        CollectionItem[]
+
+  @@map("collections")
+}
+
+model CollectionItem {
+  collectionId Int @map("collection_id")
+  mediaId      Int @map("media_id")
+  order        Int @default(0)
+
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  media        Media      @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, mediaId])
+  @@map("collection_items")
+}
+
+// ─── Print Room ───────────────────────────────────────────────────────────────
+
+model Print {
+  id          Int     @id @default(autoincrement())
+  mediaId     Int?    @map("media_id")
+  title       String
+  location    String?
+  edition     String?
+  paper       String?
+  fromPrice   Float?  @map("from_price")
+  sizes       Json?
+  featured    Boolean @default(false)
+  published   Boolean @default(false)
+  externalUrl String? @map("external_url")
+  mockups     Json?
+
+  media       Media?  @relation(fields: [mediaId], references: [id])
+
+  @@map("prints")
+}
+
+// ─── Inbox ────────────────────────────────────────────────────────────────────
+
+model Message {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  body      String
+  status    String   @default("New")   // New | Read | Replied | Archived
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("messages")
+}
+
+// ─── Site Config (singletons) ─────────────────────────────────────────────────
+
+model SiteContent {
+  key   String @id
+  value Json
+
+  @@map("site_content")
+}
+
+model SeoSettings {
+  id          Int     @id @default(1)
+  title       String?
+  description String?
+  slug        String?
+  canonical   String?
+  ogMediaId   Int?    @map("og_media_id")
+  indexable   Boolean @default(true)
+
+  @@map("seo_settings")
+}
+
+model Settings {
+  id             Int     @id @default(1)
+  email          String?
+  instagram      String?
+  facebook       String?
+  copyright      String?
+  storeUrl       String? @map("store_url")
+  imageQuality   Int     @default(82) @map("image_quality")
+  sessionMinutes Int     @default(120) @map("session_minutes")
+
+  @@map("settings")
+}
