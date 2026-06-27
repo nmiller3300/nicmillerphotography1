@@ -1,91 +1,113 @@
 /**
- * app/api/admin/media/route.ts
+ * app/api/admin/media/[id]/route.ts
  *
- * GET  /api/admin/media?status=&orientation=&category=&sort=newest|oldest&page=1
- * → paginated media list
+ * GET    /api/admin/media/:id  → full media record + derivatives + crops
+ * PATCH  /api/admin/media/:id  → update metadata, status, flags, category
+ * DELETE /api/admin/media/:id  → soft-delete (set status='archived') or hard-delete
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
-import type { Prisma } from '@prisma/client'
+import { deleteMaster, deleteDerivatives } from '@/lib/blob'
 
-const PAGE_SIZE = 48
+const patchSchema = z.object({
+  title: z.string().min(1).optional(),
+  caption: z.string().optional(),
+  description: z.string().optional(),
+  alt: z.string().optional(),
+  captureDate: z.string().optional(),
+  location: z.string().optional(),
+  camera: z.string().optional(),
+  categoryId: z.number().nullable().optional(),
+  status: z.enum(['draft', 'published', 'archived']).optional(),
+  featured: z.boolean().optional(),
+  printEnabled: z.boolean().optional(),
+  homepage: z.boolean().optional(),
+}).strict()
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { searchParams } = request.nextUrl
-  const status = searchParams.get('status')          // draft | published | archived | (all)
-  const orientation = searchParams.get('orientation') // Landscape | Portrait | Square | Pano
-  const categorySlug = searchParams.get('category')
-  const sort = searchParams.get('sort') ?? 'newest'
-  const featured = searchParams.get('featured')
-  const printEnabled = searchParams.get('print')
-  const homepage = searchParams.get('homepage')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
+  const { id } = await params
+  const media = await db.media.findUnique({
+    where: { id: Number(id) },
+    include: { derivatives: true, crops: true, category: true },
+  })
 
-  const where: Prisma.MediaWhereInput = {}
+  if (!media) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  if (status === 'archived') {
-    where.status = 'archived'
-  } else if (status && status !== 'all') {
-    where.status = status
-    where.NOT = { status: 'archived' }
-  } else if (!status) {
-    // default: exclude archived
-    where.NOT = { status: 'archived' }
+  // Strip the private master key from the response
+  const { masterKey: _mk, exif, ...rest } = media
+  return NextResponse.json({ ...rest, hasExif: !!exif })
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await requireAdmin()
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+
+  let body: unknown
+  try { body = await request.json() } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  if (orientation) where.orientation = orientation
-  if (featured === 'true') where.featured = true
-  if (printEnabled === 'true') where.printEnabled = true
-  if (homepage === 'true') where.homepage = true
-
-  if (categorySlug) {
-    where.category = { slug: categorySlug }
+  const parsed = patchSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const orderBy: Prisma.MediaOrderByWithRelationInput =
-    sort === 'oldest'
-      ? { createdAt: 'asc' }
-      : { createdAt: 'desc' }
-
-  const [total, items] = await Promise.all([
-    db.media.count({ where }),
-    db.media.findMany({
-      where,
-      orderBy,
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      include: {
-        derivatives: {
-          where: { format: 'webp', width: 960 }, // thumbnail
-          take: 1,
-        },
-        category: true,
-      },
-    }),
-  ])
+  const media = await db.media.update({
+    where: { id: Number(id) },
+    data: parsed.data,
+    include: {
+      derivatives: { where: { format: 'webp', width: 960 }, take: 1 },
+      category: true,
+    },
+  })
 
   return NextResponse.json({
-    total,
-    page,
-    pageSize: PAGE_SIZE,
-    pages: Math.ceil(total / PAGE_SIZE),
-    items: items.map((m) => ({
-      id: m.id,
-      title: m.title,
-      location: m.location,
-      status: m.status,
-      orientation: m.orientation,
-      featured: m.featured,
-      printEnabled: m.printEnabled,
-      homepage: m.homepage,
-      category: m.category?.name ?? null,
-      thumbUrl: m.derivatives[0]?.url ?? null,
-      createdAt: m.createdAt,
-    })),
+    id: media.id,
+    title: media.title,
+    status: media.status,
+    thumbUrl: media.derivatives[0]?.url ?? null,
   })
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await requireAdmin()
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  const { searchParams } = request.nextUrl
+  const hard = searchParams.get('hard') === 'true'
+
+  const media = await db.media.findUnique({ where: { id: Number(id) } })
+  if (!media) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (hard) {
+    // Hard delete — remove from Blob and DB
+    await Promise.all([
+      deleteMaster(media.masterKey),
+      deleteDerivatives(media.checksum),
+    ])
+    await db.media.delete({ where: { id: Number(id) } })
+    return NextResponse.json({ ok: true, deleted: true })
+  }
+
+  // Soft delete — archive only
+  await db.media.update({ where: { id: Number(id) }, data: { status: 'archived' } })
+  return NextResponse.json({ ok: true, archived: true })
 }
