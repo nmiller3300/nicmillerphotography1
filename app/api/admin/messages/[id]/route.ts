@@ -1,3 +1,5 @@
+export const runtime = 'nodejs'
+
 /**
  * app/api/admin/messages/[id]/route.ts
  *

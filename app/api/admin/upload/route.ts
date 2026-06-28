@@ -1,3 +1,5 @@
+export const runtime = 'nodejs'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -13,7 +15,7 @@ export async function POST(request: NextRequest) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
     return NextResponse.json({
       error: 'Blob storage not connected. Go to Vercel → Storage → Create Database → Blob, then redeploy.',
       code: 'NO_BLOB_TOKEN',
