@@ -1,4 +1,6 @@
 export const dynamic = 'force-dynamic'
+import type { Metadata } from 'next'
+export const metadata: Metadata = { title: 'Portfolio — Nic Miller Photography', description: 'Wildlife, landscapes, and natural moments photographed with atmosphere and intention.' }
 
 import Link from 'next/link'
 import Footer from '@/components/Footer'

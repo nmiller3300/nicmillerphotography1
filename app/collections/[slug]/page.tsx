@@ -1,10 +1,26 @@
 export const dynamic = 'force-dynamic'
 
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import PortfolioClient from '@/components/PortfolioClient'
 import { db } from '@/lib/db'
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{title:string,description:string|null}>>(
+      `SELECT title, description FROM collections WHERE slug = '${slug.replace(/'/g,"''")}' AND published = true LIMIT 1`
+    )
+    if (!rows.length) return { title: 'Series — Nic Miller Photography' }
+    const c = rows[0]
+    return {
+      title: `${c.title} Series — Nic Miller Photography`,
+      description: c.description || `A photo series by Nic Miller.`,
+    }
+  } catch { return { title: 'Series — Nic Miller Photography' } }
+}
 
 export default async function CollectionPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params

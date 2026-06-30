@@ -1,10 +1,25 @@
 export const dynamic = 'force-dynamic'
 
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import PhotoDetailClient from '@/components/PhotoDetailClient'
 import { db } from '@/lib/db'
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{title:string,location:string|null,caption:string|null}>>(
+      `SELECT title, location, caption FROM media WHERE id = ${parseInt(id)} AND status = 'published' LIMIT 1`
+    )
+    if (!rows.length) return { title: 'Photo — Nic Miller Photography' }
+    const p = rows[0]
+    const title = `${p.title}${p.location ? ` — ${p.location}` : ''} | Nic Miller Photography`
+    const description = p.caption || `Wildlife and landscape photography by Nic Miller.`
+    return { title, description }
+  } catch { return { title: 'Photo — Nic Miller Photography' } }
+}
 
 export default async function PhotoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

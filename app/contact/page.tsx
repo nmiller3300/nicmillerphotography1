@@ -1,4 +1,6 @@
 export const dynamic = 'force-dynamic'
+import type { Metadata } from 'next'
+export const metadata: Metadata = { title: 'Contact — Nic Miller Photography', description: 'Get in touch for print enquiries, licensing, or just to talk photography.' }
 
 import Footer from '@/components/Footer'
 import ContactClient from '@/components/ContactClient'

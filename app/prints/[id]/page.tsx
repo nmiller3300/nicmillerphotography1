@@ -1,9 +1,25 @@
 export const dynamic = 'force-dynamic'
 
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import { db } from '@/lib/db'
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{title:string,location:string|null}>>(
+      `SELECT title, location FROM prints WHERE id = ${parseInt(id)} AND published = true LIMIT 1`
+    )
+    if (!rows.length) return { title: 'Fine Art Print — Nic Miller Photography' }
+    const p = rows[0]
+    return {
+      title: `${p.title} Fine Art Print${p.location ? ` — ${p.location}` : ''} | Nic Miller Photography`,
+      description: `Limited-edition fine art print by Nic Miller${p.location ? `, ${p.location}` : ''}. Museum-quality archival paper.`,
+    }
+  } catch { return { title: 'Fine Art Print — Nic Miller Photography' } }
+}
 
 export default async function PrintDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
