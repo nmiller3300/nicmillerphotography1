@@ -35,7 +35,8 @@ async function getData() {
         FROM prints p
         LEFT JOIN media m ON m.id = p.media_id
         LEFT JOIN derivatives d ON d.media_id = m.id AND d.format = 'webp' AND d.width = 960
-        WHERE p.featured = true AND p.published = true LIMIT 1
+        WHERE p.featured = true AND p.published = true
+        ORDER BY p.id DESC LIMIT 1
       `),
     ])
     const c: Record<string,string> = {}

@@ -67,6 +67,26 @@ export async function PATCH(request: NextRequest) {
         }
       }
     }
+
+    // Single-selection enforcement: only ONE print can be featured on the homepage.
+    // If the incoming list marks any as featured, keep only the first such one.
+    const featuredIncoming = items.filter((it) => (it as Record<string,unknown>).featured === true)
+    if (featuredIncoming.length > 0) {
+      // Resolve the id we want to keep featured (first featured item that has a real id)
+      const keep = featuredIncoming.find((it) => {
+        const id = (it as Record<string,unknown>).id
+        return id && String(id).length <= 10
+      }) as Record<string,unknown> | undefined
+      if (keep && keep.id) {
+        await db.$executeRawUnsafe(`UPDATE prints SET featured = false WHERE id != ${Number(keep.id)} AND featured = true`)
+      } else {
+        // Featured item was newly created (no stable id yet) — keep the most recent featured row
+        await db.$executeRawUnsafe(`
+          UPDATE prints SET featured = false
+          WHERE featured = true AND id NOT IN (SELECT id FROM prints WHERE featured = true ORDER BY id DESC LIMIT 1)
+        `)
+      }
+    }
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('Prints PATCH error:', err)

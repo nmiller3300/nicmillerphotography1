@@ -152,7 +152,7 @@ export default function AdminPanel() {
   async function savePhoto(status: 'draft'|'published') {
     if (!editing) return
     setLoading(true)
-    try { await api('PATCH',`/api/admin/media/${editing.id}`,{...ef,status}); setPhotos(prev=>prev.map(p=>p.id===editing.id?{...p,...ef,status}:p)); toast$(status==='published'?'✓ Published — live on your site':'✓ Saved as draft'); setEditing(null) }
+    try { await api('PATCH',`/api/admin/media/${editing.id}`,{...ef,status}); setPhotos(prev=>prev.map(p=>p.id===editing.id?{...p,...ef,status}:(ef.homepage?{...p,homepage:false}:p))); toast$(status==='published'?'✓ Published — live on your site':'✓ Saved as draft'); setEditing(null) }
     catch(err){toast$(String(err),true)}
     setLoading(false)
   }
@@ -165,7 +165,7 @@ export default function AdminPanel() {
   }
   async function setImageSlot(slot: 'hero'|'portrait'|'story', photo: Photo) {
     try {
-      if (slot==='hero') { await api('PATCH',`/api/admin/media/${photo.id}`,{homepage:true,status:'published'}); setHeroUrl(photo.thumbUrl||null); setPhotos(prev=>prev.map(p=>p.id===photo.id?{...p,homepage:true}:p)); toast$('✓ Hero image updated') }
+      if (slot==='hero') { await api('PATCH',`/api/admin/media/${photo.id}`,{homepage:true,status:'published'}); setHeroUrl(photo.thumbUrl||null); setPhotos(prev=>prev.map(p=>({...p,homepage:p.id===photo.id}))); toast$('✓ Hero image updated') }
       else { const url=photo.thumbUrl||''; await api('PATCH','/api/admin/content',{[slot==='portrait'?'portraitUrl':'storyImageUrl']:url}); if(slot==='portrait')setPortraitUrl(url);else setStoryUrl(url); toast$(`✓ ${slot==='portrait'?'Portrait':'Story banner'} updated`) }
       setImgSlot(null)
     } catch(err){toast$(String(err),true)}

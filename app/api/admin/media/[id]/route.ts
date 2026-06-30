@@ -75,6 +75,12 @@ export async function PATCH(
 
     await db.$executeRawUnsafe(`UPDATE media SET ${sets.join(', ')} WHERE id = ${mediaId}`)
 
+    // Single-selection enforcement: only ONE photo can be the homepage hero.
+    // If this photo was just set as hero, clear the flag on every other photo.
+    if (homepage === true) {
+      await db.$executeRawUnsafe(`UPDATE media SET homepage = false WHERE id != ${mediaId} AND homepage = true`)
+    }
+
     // Handle portrait/story banner flags
     if (body.isPortrait === true) {
       const thumbRows = await db.$queryRawUnsafe<Array<{url:string}>>(`
