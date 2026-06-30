@@ -77,7 +77,7 @@ export default async function HomePage() {
                 EXPLORE&nbsp;PORTFOLIO <svg className="nm-arrow" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
               </Link>
               <Link href="/prints" className="nm-hl nm-link" style={{ display:'inline-flex', alignItems:'center', gap:'12px', padding:'15px 26px', borderRadius:'12px', border:'1px solid rgba(255,255,255,0.3)', color:'#f4f1ec', fontWeight:500, fontSize:'12.5px', letterSpacing:'0.16em', background:'none', fontFamily:"'Manrope'" }}>
-                VISIT&nbsp;PRINTPRINT&nbsp;ROOMnbsp;SHOP
+                VISIT&nbsp;PRINT&nbsp;SHOP
               </Link>
             </div>
           </div>
@@ -111,13 +111,13 @@ export default async function HomePage() {
         <div style={{ position:'relative', maxWidth:'1264px', margin:'0 auto', padding:'0 32px', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(290px, 1fr))', gap:'clamp(28px,4vw,56px)', alignItems:'center' }}>
           <div style={{ maxWidth:'400px' }}>
             <div style={{ display:'flex', alignItems:'center', gap:'14px', marginBottom:'24px' }}>
-              <span style={{ fontSize:'12px', letterSpacing:'0.28em', color:'#c8923c' }}>PRINTPRINT&nbsp;ROOMnbsp;SHOP</span>
+              <span style={{ fontSize:'12px', letterSpacing:'0.28em', color:'#c8923c' }}>PRINT&nbsp;SHOP</span>
               <span style={{ width:'46px', height:'1px', background:'rgba(200,146,60,0.5)' }} />
             </div>
             <h2 style={{ fontFamily:"'Jost',sans-serif", fontWeight:300, fontSize:'clamp(28px,3.2vw,42px)', lineHeight:1.14, letterSpacing:'0.05em', margin:'0 0 22px', color:'#f4f1ec' }}>MUSEUM&nbsp;QUALITY.<br/>MADE&nbsp;TO&nbsp;LAST.</h2>
             <p style={{ fontSize:'15px', lineHeight:1.7, color:'rgba(244,241,236,0.6)', margin:'0 0 28px', fontWeight:300 }}>Archival fine art prints crafted with the world&#39;s best materials and attention to detail.</p>
             <Link href="/prints" className="nm-hl nm-link" style={{ display:'inline-flex', alignItems:'center', gap:'11px', fontSize:'12px', letterSpacing:'0.2em', color:'#e3b463', borderBottom:'1px solid rgba(200,146,60,0.4)', padding:'0 0 7px', background:'none', border:'none', fontFamily:"'Manrope'" }}>
-              EXPLORE&nbsp;PRINTPRINT&nbsp;ROOMnbsp;SHOP <svg className="nm-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              EXPLORE&nbsp;PRINT&nbsp;SHOP <svg className="nm-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
             </Link>
           </div>
           <div className="nm-lift" style={{ minWidth:0, borderRadius:'20px', overflow:'hidden', background:'linear-gradient(135deg, rgba(26,21,15,0.9), rgba(13,11,10,0.85))', border:'1px solid rgba(255,255,255,0.08)', boxShadow:'0 24px 60px rgba(0,0,0,0.5)', display:'flex', flexWrap:'wrap' }}>

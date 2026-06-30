@@ -16,7 +16,7 @@ export default function Footer({
           <Image src="/nm-wordmark-white.png" alt="Nic Miller Photography" height={38} width={152} style={{ height:'38px', width:'auto', opacity:0.92 }} />
         </Link>
         <nav style={{ display:'flex', gap:'26px', flexWrap:'wrap', flex:1, justifyContent:'center', minWidth:'200px' }}>
-          <Link href="/prints" style={btnStyle} className="nm-hl">PRINTPRINT&nbsp;ROOMnbsp;SHOP</Link>
+          <Link href="/prints" style={btnStyle} className="nm-hl">PRINT&nbsp;SHOP</Link>
           <Link href="/contact" style={btnStyle} className="nm-hl">CONTACT</Link>
           <Link href="/about" style={btnStyle} className="nm-hl">ABOUT</Link>
           <Link href="/story" style={btnStyle} className="nm-hl">MY&nbsp;STORY</Link>

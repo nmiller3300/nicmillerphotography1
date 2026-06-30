@@ -30,11 +30,18 @@ export async function POST(request: NextRequest) {
 
   // Checksum + dupe check
   const checksum = crypto.createHash('sha256').update(buffer).digest('hex')
-  const existing = await db.$queryRawUnsafe<Array<{id:number}>>(
-    `SELECT id FROM media WHERE checksum = '${checksum}' LIMIT 1`
+  // Only block if a LIVE (non-archived) copy exists. Archived/soft-deleted
+  // rows get cleaned up so the photo can be re-uploaded.
+  const existing = await db.$queryRawUnsafe<Array<{id:number,status:string}>>(
+    `SELECT id, status FROM media WHERE checksum = '${checksum}' LIMIT 1`
   )
   if (existing.length > 0) {
-    return NextResponse.json({ error: 'This photo is already in your library.', mediaId: existing[0].id }, { status: 409 })
+    if (existing[0].status === 'archived') {
+      // Purge the stale archived row + its derivatives so the new upload is clean
+      await db.$executeRawUnsafe(`DELETE FROM media WHERE id = ${existing[0].id}`).catch(() => {})
+    } else {
+      return NextResponse.json({ error: 'This photo is already in your library.', mediaId: existing[0].id }, { status: 409 })
+    }
   }
 
   // Get image metadata

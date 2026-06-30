@@ -32,7 +32,7 @@ export default function Nav() {
           <div style={{ display: 'flex', gap: '28px', flex: 1, minWidth: 0 }} className="desknav">
             <Link href="/" style={{ ...navBtn, color: nc('/') }} className="nm-hl">HOME</Link>
             <Link href="/portfolio" style={{ ...navBtn, color: nc('/portfolio') }} className="nm-hl">PORTFOLIO</Link>
-            <Link href="/prints" style={{ ...navBtn, color: nc('/prints') }} className="nm-hl">PRINTPRINT&nbsp;ROOMnbsp;SHOP</Link>
+            <Link href="/prints" style={{ ...navBtn, color: nc('/prints') }} className="nm-hl">PRINT&nbsp;SHOP</Link>
           </div>
 
           {/* Logo */}

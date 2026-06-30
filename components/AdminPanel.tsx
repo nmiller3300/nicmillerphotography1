@@ -158,7 +158,7 @@ export default function AdminPanel() {
   async function deletePhoto() {
     if (!editing||!confirm('Delete this photo permanently?')) return
     setLoading(true)
-    try { await api('DELETE',`/api/admin/media/${editing.id}`); setPhotos(prev=>prev.filter(p=>p.id!==editing.id)); toast$('Photo deleted'); setEditing(null) }
+    try { await api('DELETE',`/api/admin/media/${editing.id}?hard=true`); setPhotos(prev=>prev.filter(p=>p.id!==editing.id)); toast$('Photo deleted'); setEditing(null) }
     catch(err){toast$(String(err),true)}
     setLoading(false)
   }
