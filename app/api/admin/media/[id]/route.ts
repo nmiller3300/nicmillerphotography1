@@ -1,52 +1,34 @@
 export const runtime = 'nodejs'
 
-/**
- * app/api/admin/media/[id]/route.ts
- *
- * GET    /api/admin/media/:id  → full media record + derivatives + crops
- * PATCH  /api/admin/media/:id  → update metadata, status, flags, category
- * DELETE /api/admin/media/:id  → soft-delete (set status='archived') or hard-delete
- */
-
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { deleteMaster, deleteDerivatives } from '@/lib/blob'
 
-const patchSchema = z.object({
-  title: z.string().min(1).optional(),
-  caption: z.string().optional(),
-  description: z.string().optional(),
-  alt: z.string().optional(),
-  captureDate: z.string().optional(),
-  location: z.string().optional(),
-  camera: z.string().optional(),
-  categoryId: z.number().nullable().optional(),
-  status: z.enum(['draft', 'published', 'archived']).optional(),
-  featured: z.boolean().optional(),
-  printEnabled: z.boolean().optional(),
-  homepage: z.boolean().optional(),
-}).strict()
-
 export async function GET(
-  _request: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { id } = await params
-  const media = await db.media.findUnique({
-    where: { id: Number(id) },
-    include: { derivatives: true, crops: true, category: true },
-  })
 
-  if (!media) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-
-  // Strip the private master key from the response
-  const { masterKey: _mk, exif, ...rest } = media
-  return NextResponse.json({ ...rest, hasExif: !!exif })
+  try {
+    const rows = await db.$queryRawUnsafe<Array<Record<string,unknown>>>(`
+      SELECT m.id, m.title, m.caption, m.description, m.alt, m.location, m.camera,
+             m.capture_date, m.status, m.orientation, m.featured,
+             m.print_enabled, m.homepage, m.created_at,
+             d.url as thumb_url
+      FROM media m
+      LEFT JOIN derivatives d ON d.media_id = m.id AND d.format = 'webp' AND d.width = 960
+      WHERE m.id = ${parseInt(id)}
+      LIMIT 1
+    `)
+    if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json(rows[0])
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
 }
 
 export async function PATCH(
@@ -55,34 +37,80 @@ export async function PATCH(
 ) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { id } = await params
+  const mediaId = parseInt(id)
 
-  let body: unknown
+  let body: Record<string, unknown>
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const parsed = patchSchema.safeParse(body)
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
+  try {
+    // Pull known fields — ignore extras like isPortrait, isStoryBanner (handled below)
+    const title       = typeof body.title       === 'string' ? body.title.replace(/'/g,"''")       : null
+    const caption     = typeof body.caption     === 'string' ? body.caption.replace(/'/g,"''")     : null
+    const description = typeof body.description === 'string' ? body.description.replace(/'/g,"''") : null
+    const alt         = typeof body.alt         === 'string' ? body.alt.replace(/'/g,"''")         : null
+    const location    = typeof body.location    === 'string' ? body.location.replace(/'/g,"''")    : null
+    const camera      = typeof body.camera      === 'string' ? body.camera.replace(/'/g,"''")      : null
+    const captureDate = typeof body.captureDate === 'string' ? body.captureDate.replace(/'/g,"''") : null
+    const status      = ['draft','published','archived'].includes(body.status as string) ? body.status as string : null
+    const featured    = typeof body.featured    === 'boolean' ? body.featured    : null
+    const printEnabled= typeof body.printEnabled=== 'boolean' ? body.printEnabled: null
+    const homepage    = typeof body.homepage    === 'boolean' ? body.homepage    : null
+
+    // Build SET clause
+    const sets: string[] = ['updated_at = NOW()']
+    if (title        !== null) sets.push(`title = '${title}'`)
+    if (caption      !== null) sets.push(`caption = '${caption}'`)
+    if (description  !== null) sets.push(`description = '${description}'`)
+    if (alt          !== null) sets.push(`alt = '${alt}'`)
+    if (location     !== null) sets.push(`location = '${location}'`)
+    if (camera       !== null) sets.push(`camera = '${camera}'`)
+    if (captureDate  !== null) sets.push(`capture_date = '${captureDate}'`)
+    if (status       !== null) sets.push(`status = '${status}'`)
+    if (featured     !== null) sets.push(`featured = ${featured}`)
+    if (printEnabled !== null) sets.push(`print_enabled = ${printEnabled}`)
+    if (homepage     !== null) sets.push(`homepage = ${homepage}`)
+
+    await db.$executeRawUnsafe(`UPDATE media SET ${sets.join(', ')} WHERE id = ${mediaId}`)
+
+    // Handle portrait/story banner flags
+    if (body.isPortrait === true) {
+      const thumbRows = await db.$queryRawUnsafe<Array<{url:string}>>(`
+        SELECT url FROM derivatives WHERE media_id = ${mediaId} AND format = 'webp' AND width = 960 LIMIT 1
+      `)
+      const url = thumbRows[0]?.url
+      if (url) {
+        await db.$executeRawUnsafe(`
+          INSERT INTO site_content (key, value) VALUES ('portraitUrl', '"${url}"')
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        `)
+      }
+    }
+    if (body.isStoryBanner === true) {
+      const dispRows = await db.$queryRawUnsafe<Array<{url:string}>>(`
+        SELECT url FROM derivatives WHERE media_id = ${mediaId} AND format = 'webp' ORDER BY width DESC LIMIT 1
+      `)
+      const url = dispRows[0]?.url
+      if (url) {
+        await db.$executeRawUnsafe(`
+          INSERT INTO site_content (key, value) VALUES ('storyImageUrl', '"${url}"')
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        `)
+      }
+    }
+
+    // Return the thumb URL for the media grid
+    const thumbRows = await db.$queryRawUnsafe<Array<{url:string}>>(`
+      SELECT url FROM derivatives WHERE media_id = ${mediaId} AND format = 'webp' AND width = 960 LIMIT 1
+    `)
+
+    return NextResponse.json({ id: mediaId, status: body.status, thumbUrl: thumbRows[0]?.url ?? null })
+  } catch (err) {
+    console.error('PATCH media error:', err)
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
-
-  const media = await db.media.update({
-    where: { id: Number(id) },
-    data: parsed.data,
-    include: {
-      derivatives: { where: { format: 'webp', width: 960 }, take: 1 },
-      category: true,
-    },
-  })
-
-  return NextResponse.json({
-    id: media.id,
-    title: media.title,
-    status: media.status,
-    thumbUrl: media.derivatives[0]?.url ?? null,
-  })
 }
 
 export async function DELETE(
@@ -91,25 +119,28 @@ export async function DELETE(
 ) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { id } = await params
-  const { searchParams } = request.nextUrl
-  const hard = searchParams.get('hard') === 'true'
+  const mediaId = parseInt(id)
 
-  const media = await db.media.findUnique({ where: { id: Number(id) } })
-  if (!media) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    const hard = request.nextUrl.searchParams.get('hard') === 'true'
+    const rows = await db.$queryRawUnsafe<Array<{master_key:string,checksum:string}>>(
+      `SELECT master_key, checksum FROM media WHERE id = ${mediaId} LIMIT 1`
+    )
+    if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  if (hard) {
-    // Hard delete — remove from Blob and DB
-    await Promise.all([
-      deleteMaster(media.masterKey),
-      deleteDerivatives(media.checksum),
-    ])
-    await db.media.delete({ where: { id: Number(id) } })
-    return NextResponse.json({ ok: true, deleted: true })
+    if (hard) {
+      await Promise.allSettled([
+        deleteMaster(rows[0].master_key),
+        deleteDerivatives(rows[0].checksum),
+      ])
+      await db.$executeRawUnsafe(`DELETE FROM media WHERE id = ${mediaId}`)
+      return NextResponse.json({ ok: true, deleted: true })
+    }
+
+    await db.$executeRawUnsafe(`UPDATE media SET status = 'archived' WHERE id = ${mediaId}`)
+    return NextResponse.json({ ok: true, archived: true })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
-
-  // Soft delete — archive only
-  await db.media.update({ where: { id: Number(id) }, data: { status: 'archived' } })
-  return NextResponse.json({ ok: true, archived: true })
 }

@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const page   = Math.max(1, Number(searchParams.get('page') ?? '1'))
     const offset = (page - 1) * PAGE_SIZE
     const order  = sort === 'oldest' ? 'ASC' : 'DESC'
+    const orderBy = sort === 'manual' ? 'm.sort_order ASC, m.created_at DESC' : `m.created_at ${order}`
 
     // Build WHERE clause with raw SQL to avoid Prisma type issues
     let where = `m.status != 'archived'`
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
          LEFT JOIN derivatives d ON d.media_id = m.id
            AND d.format = 'webp' AND d.width = 960
          WHERE ${where}
-         ORDER BY m.created_at ${order}
+         ORDER BY ${orderBy}
          LIMIT ${PAGE_SIZE} OFFSET ${offset}`
       )
     ])

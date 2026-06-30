@@ -3,23 +3,19 @@ export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { putMaster, putDerivative } from '@/lib/blob'
-import { computeChecksum, extractMeta, processPipeline } from '@/lib/image-pipeline'
+import { put } from '@vercel/blob'
+import crypto from 'crypto'
+import sharp from 'sharp'
 
-const ALLOWED_MIME = new Set(['image/jpeg','image/png','image/webp','image/tiff'])
-const MAX_FILE_SIZE = 50 * 1024 * 1024
-
-export const config = { api: { bodyParser: false } }
+const ALLOWED = new Set(['image/jpeg','image/png','image/webp','image/tiff','image/heic'])
+const MAX_SIZE = 50 * 1024 * 1024
 
 export async function POST(request: NextRequest) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
-    return NextResponse.json({
-      error: 'Blob storage not connected. Go to Vercel → Storage → Create Database → Blob, then redeploy.',
-      code: 'NO_BLOB_TOKEN',
-    }, { status: 503 })
+    return NextResponse.json({ error: 'Blob storage not connected. Go to Vercel → Storage → Blob → Connect.', code: 'NO_BLOB_TOKEN' }, { status: 503 })
   }
 
   let formData: FormData
@@ -28,59 +24,66 @@ export async function POST(request: NextRequest) {
 
   const file = formData.get('file')
   if (!(file instanceof File)) return NextResponse.json({ error: "Missing 'file' field" }, { status: 400 })
-  if (!ALLOWED_MIME.has(file.type)) return NextResponse.json({ error: `Unsupported type: ${file.type}` }, { status: 415 })
-  if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: 'File exceeds 50MB' }, { status: 413 })
+  if (file.size > MAX_SIZE) return NextResponse.json({ error: 'File exceeds 50 MB' }, { status: 413 })
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const checksum = computeChecksum(buffer)
 
-  const existing = await db.media.findUnique({ where: { checksum } })
-  if (existing) return NextResponse.json({ error: 'Duplicate file already in library.', mediaId: existing.id }, { status: 409 })
-
-  try {
-    const masterKey = await putMaster(checksum, buffer, file.type)
-    const settings  = await db.settings.findFirst()
-    const quality   = settings?.imageQuality ?? 82
-    const { meta, derivatives } = await processPipeline(buffer, quality)
-
-    const derivativeUploads = await Promise.all(
-      derivatives.map(async d => {
-        const url = await putDerivative(checksum, d.format, d.width, d.buffer)
-        return { format: d.format, width: d.width, url, bytes: d.bytes }
-      })
-    )
-
-    const media = await db.media.create({
-      data: {
-        title:        file.name.replace(/\.[^.]+$/, ''),
-        checksum,
-        width:        meta.width,
-        height:       meta.height,
-        aspect:       meta.aspect,
-        orientation:  meta.orientation,
-        fileSize:     BigInt(meta.fileSize),
-        colorProfile: meta.colorProfile,
-        exif:         meta.exif as never,
-        masterKey,
-        status:       'draft',
-        derivatives:  { create: derivativeUploads },
-      },
-      include: { derivatives: true },
-    })
-
-    return NextResponse.json({
-      id:           media.id,
-      title:        media.title,
-      status:       media.status,
-      orientation:  media.orientation,
-      width:        meta.width,
-      height:       meta.height,
-      thumbUrl:     derivativeUploads.find(d => d.format === 'webp')?.url ?? derivativeUploads[0]?.url ?? null,
-      derivatives:  media.derivatives,
-    }, { status: 201 })
-
-  } catch (err) {
-    console.error('Upload error:', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+  // Checksum + dupe check
+  const checksum = crypto.createHash('sha256').update(buffer).digest('hex')
+  const existing = await db.$queryRawUnsafe<Array<{id:number}>>(
+    `SELECT id FROM media WHERE checksum = '${checksum}' LIMIT 1`
+  )
+  if (existing.length > 0) {
+    return NextResponse.json({ error: 'This photo is already in your library.', mediaId: existing[0].id }, { status: 409 })
   }
+
+  // Get image metadata
+  const meta = await sharp(buffer).metadata()
+  const width = meta.width ?? 0
+  const height = meta.height ?? 0
+  const aspect = height > 0 ? width / height : 1
+  const orientation = aspect > 1.2 ? 'Landscape' : aspect < 0.85 ? 'Portrait' : 'Square'
+  const fileSize = buffer.length
+
+  // Generate just 2 derivatives: 960px WebP (thumb) and 1440px WebP (display)
+  const [thumb, display] = await Promise.all([
+    sharp(buffer).resize(960, null, { withoutEnlargement: true }).webp({ quality: 90 }).toBuffer(),
+    sharp(buffer).resize(1440, null, { withoutEnlargement: true }).webp({ quality: 90 }).toBuffer(),
+  ])
+
+  // Upload master + derivatives to Blob
+  const [masterBlob, thumbBlob, displayBlob] = await Promise.all([
+    put(`masters/${checksum}`, buffer, { access: 'public', addRandomSuffix: false, contentType: file.type }),
+    put(`photos/${checksum}/960.webp`, thumb, { access: 'public', addRandomSuffix: false, contentType: 'image/webp' }),
+    put(`photos/${checksum}/1440.webp`, display, { access: 'public', addRandomSuffix: false, contentType: 'image/webp' }),
+  ])
+
+  // Save to DB
+  const title = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+  
+  await db.$executeRawUnsafe(
+    `INSERT INTO media (title, checksum, width, height, aspect, orientation, file_size, master_key, status, featured, print_enabled, homepage, created_at, updated_at)
+     VALUES ('${title.replace(/'/g, "''")}', '${checksum}', ${width}, ${height}, ${aspect}, '${orientation}', ${fileSize}, '${masterBlob.pathname}', 'draft', false, false, false, NOW(), NOW())`
+  )
+
+  const inserted = await db.$queryRawUnsafe<Array<{id:number}>>(
+    `SELECT id FROM media WHERE checksum = '${checksum}' LIMIT 1`
+  )
+  const mediaId = inserted[0]?.id
+
+  if (mediaId) {
+    await db.$executeRawUnsafe(
+      `INSERT INTO derivatives (media_id, format, width, url, bytes) VALUES
+       (${mediaId}, 'webp', 960, '${thumbBlob.url}', ${thumb.length}),
+       (${mediaId}, 'webp', 1440, '${displayBlob.url}', ${display.length})`
+    )
+  }
+
+  return NextResponse.json({
+    id: mediaId,
+    title,
+    status: 'draft',
+    orientation,
+    thumbUrl: thumbBlob.url,
+  }, { status: 201 })
 }

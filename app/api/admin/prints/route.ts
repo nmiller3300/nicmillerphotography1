@@ -1,71 +1,25 @@
 export const runtime = 'nodejs'
 
-/**
- * app/api/admin/prints/route.ts
- *
- * GET   /api/admin/prints           → all print listings
- * POST  /api/admin/prints           → create a new print listing
- * PATCH /api/admin/prints           → { id, ...fields } → update
- */
-
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 
-const sizeSchema = z.object({
-  label: z.string(),
-  price: z.number().positive(),
-})
-
-const printSchema = z.object({
-  id: z.number().optional(),                    // required for PATCH
-  mediaId: z.number().nullable().optional(),
-  title: z.string().min(1),
-  location: z.string().optional(),
-  edition: z.string().optional(),
-  paper: z.string().optional(),
-  fromPrice: z.number().positive().optional(),
-  sizes: z.array(sizeSchema).optional(),
-  featured: z.boolean().optional(),
-  published: z.boolean().optional(),
-  externalUrl: z.string().url().nullable().optional(),
-})
-
 export async function GET() {
-  const prints = await db.print.findMany({
-    orderBy: { id: 'asc' },
-    include: {
-      media: {
-        include: { derivatives: { where: { format: 'webp', width: 960 }, take: 1 } },
-      },
-    },
-  })
-
-  return NextResponse.json(
-    prints.map((p) => ({
-      ...p,
-      thumbUrl: p.media?.derivatives[0]?.url ?? null,
-    })),
-  )
-}
-
-export async function POST(request: NextRequest) {
-  const session = await requireAdmin()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  let body: unknown
-  try { body = await request.json() } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  try {
+    const rows = await db.$queryRawUnsafe<Array<Record<string,unknown>>>(`
+      SELECT p.id, p.title, p.location, p.edition, p.paper,
+             p.from_price as "fromPrice", p.featured, p.published,
+             p.external_url as "externalUrl", p.media_id as "mediaId",
+             d.url as "thumbUrl"
+      FROM prints p
+      LEFT JOIN media m ON m.id = p.media_id
+      LEFT JOIN derivatives d ON d.media_id = m.id AND d.format = 'webp' AND d.width = 960
+      ORDER BY p.id ASC
+    `)
+    return NextResponse.json(rows)
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
-
-  const parsed = printSchema.omit({ id: true }).safeParse(body)
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
-  }
-
-  const print = await db.print.create({ data: parsed.data as never })
-  return NextResponse.json(print, { status: 201 })
 }
 
 export async function PATCH(request: NextRequest) {
@@ -77,18 +31,47 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Support both single { id, ...fields } and array [{ id, ...fields }, ...] bulk
   const items = Array.isArray(body) ? body : [body]
-  const results = await Promise.all(
-    items.map(async (item) => {
-      const parsed = printSchema.safeParse(item)
-      if (!parsed.success || !parsed.data.id) return { error: 'Invalid item' }
-      const { id, ...data } = parsed.data
-      return db.print.update({ where: { id }, data: data as never })
-    }),
-  )
 
-  return NextResponse.json(results)
+  try {
+    for (const item of items as Array<Record<string,unknown>>) {
+      // If no id, it's a new print — insert it
+      if (!item.id || String(item.id).length > 10) {
+        // New print (client-generated temp id is a large timestamp)
+        const title     = String(item.title||'New Print').replace(/'/g,"''")
+        const location  = item.location ? `'${String(item.location).replace(/'/g,"''")}'` : 'NULL'
+        const fromPrice = item.fromPrice ? Number(item.fromPrice) : 'NULL'
+        const featured  = item.featured  ? 'true' : 'false'
+        const published = item.published ? 'true' : 'false'
+        const extUrl    = item.externalUrl ? `'${String(item.externalUrl).replace(/'/g,"''")}'` : 'NULL'
+        const mediaId   = item.mediaId || item.media_id ? Number(item.mediaId||item.media_id) : 'NULL'
+
+        await db.$executeRawUnsafe(`
+          INSERT INTO prints (title, location, from_price, featured, published, external_url, media_id)
+          VALUES ('${title}', ${location}, ${fromPrice}, ${featured}, ${published}, ${extUrl}, ${mediaId})
+        `)
+      } else {
+        // Existing print — update it
+        const id = Number(item.id)
+        const sets: string[] = []
+        if (item.title       !== undefined) sets.push(`title = '${String(item.title).replace(/'/g,"''")}'`)
+        if (item.location    !== undefined) sets.push(`location = ${item.location ? `'${String(item.location).replace(/'/g,"''")}'` : 'NULL'}`)
+        if (item.fromPrice   !== undefined) sets.push(`from_price = ${item.fromPrice ? Number(item.fromPrice) : 'NULL'}`)
+        if (item.featured    !== undefined) sets.push(`featured = ${!!item.featured}`)
+        if (item.published   !== undefined) sets.push(`published = ${!!item.published}`)
+        if (item.externalUrl !== undefined) sets.push(`external_url = ${item.externalUrl ? `'${String(item.externalUrl).replace(/'/g,"''")}'` : 'NULL'}`)
+        const mediaId = item.mediaId || item.media_id
+        if (mediaId !== undefined) sets.push(`media_id = ${mediaId ? Number(mediaId) : 'NULL'}`)
+        if (sets.length > 0) {
+          await db.$executeRawUnsafe(`UPDATE prints SET ${sets.join(', ')} WHERE id = ${id}`)
+        }
+      }
+    }
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('Prints PATCH error:', err)
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
 }
 
 export async function DELETE(request: NextRequest) {
@@ -98,6 +81,10 @@ export async function DELETE(request: NextRequest) {
   const id = Number(request.nextUrl.searchParams.get('id'))
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
-  await db.print.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
+  try {
+    await db.$executeRawUnsafe(`DELETE FROM prints WHERE id = ${id}`)
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
 }

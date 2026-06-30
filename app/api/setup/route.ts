@@ -36,6 +36,14 @@ export async function GET(request: NextRequest) {
     await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY DEFAULT 1, email TEXT, instagram TEXT, facebook TEXT, copyright TEXT, store_url TEXT, image_quality INTEGER NOT NULL DEFAULT 82, session_minutes INTEGER NOT NULL DEFAULT 120, CHECK (id = 1))`)
     results.push('settings')
 
+    // ── Idempotent migrations (safe to run repeatedly) ──
+    await db.$executeRawUnsafe(`ALTER TABLE media ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`)
+    await db.$executeRawUnsafe(`ALTER TABLE collections ADD COLUMN IF NOT EXISTS slug TEXT`)
+    await db.$executeRawUnsafe(`ALTER TABLE collections ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`)
+    // Backfill sort_order from created_at so existing photos have a stable initial order
+    await db.$executeRawUnsafe(`UPDATE media SET sort_order = sub.rn FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rn FROM media WHERE sort_order = 0) sub WHERE media.id = sub.id AND media.sort_order = 0`)
+    results.push('migrations')
+
     // Seed — no literal newlines in JSON strings
     await db.$executeRawUnsafe(`INSERT INTO settings (id,email,instagram,facebook,copyright,store_url,image_quality,session_minutes) VALUES (1,'nmiller3300@gmail.com','nicmiller.photography','nicmiller.photography','© 2026 Nic Miller Photography. All rights reserved.','https://nicmillerphotography.pixieset.com',82,120) ON CONFLICT (id) DO NOTHING`)
     await db.$executeRawUnsafe(`INSERT INTO seo_settings (id,title,description,slug,canonical,indexable) VALUES (1,'Nic Miller Photography — Fine Art Nature & Landscape Prints','Limited-edition nature, wildlife and landscape prints by Nic Miller.','/','https://nicmiller.photography',TRUE) ON CONFLICT (id) DO NOTHING`)

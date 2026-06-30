@@ -32,7 +32,7 @@ export default function Nav() {
           <div style={{ display: 'flex', gap: '28px', flex: 1, minWidth: 0 }} className="desknav">
             <Link href="/" style={{ ...navBtn, color: nc('/') }} className="nm-hl">HOME</Link>
             <Link href="/portfolio" style={{ ...navBtn, color: nc('/portfolio') }} className="nm-hl">PORTFOLIO</Link>
-            <Link href="/prints" style={{ ...navBtn, color: nc('/prints') }} className="nm-hl">PRINT&nbsp;ROOM</Link>
+            <Link href="/prints" style={{ ...navBtn, color: nc('/prints') }} className="nm-hl">PRINTPRINT&nbsp;ROOMnbsp;SHOP</Link>
           </div>
 
           {/* Logo */}
@@ -58,7 +58,7 @@ export default function Nav() {
       {/* Mobile menu */}
       {menuOpen && (
         <div style={{ position: 'fixed', zIndex: 80, top: '78px', left: '20px', right: '20px', borderRadius: '18px', padding: '14px', background: 'rgba(18,16,14,0.92)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 24px 60px rgba(0,0,0,0.6)', animation: 'nmover .3s ease both' }}>
-          {[['/', 'Home'], ['/portfolio', 'Portfolio'], ['/prints', 'Print Room'], ['/about', 'About'], ['/contact', 'Contact']].map(([href, label]) => (
+          {[['/', 'Home'], ['/portfolio', 'Portfolio'], ['/prints', 'Print Shop'], ['/about', 'About'], ['/contact', 'Contact']].map(([href, label]) => (
             <Link key={href} href={href} style={mLink} onClick={() => setMenuOpen(false)}>{label}</Link>
           ))}
         </div>

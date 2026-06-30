@@ -1,793 +1,780 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, DragEvent } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 
-type Screen = 'dashboard'|'media'|'editor'|'messages'|'homepage'|'about'|'portfolio'|'print'|'seo'|'settings'
+type Tab = 'photos' | 'collections' | 'content' | 'settings'
 
-interface MediaItem {
+interface Photo {
   id: number; title: string; location?: string|null; status: string
-  featured?: boolean; printEnabled?: boolean; homepage?: boolean; orientation?: string
-  thumbUrl?: string|null
+  featured?: boolean; printEnabled?: boolean; homepage?: boolean
+  orientation?: string; thumbUrl?: string|null
 }
-interface MsgItem { id: number; name: string; email: string; body: string; status: string; createdAt: string }
-interface PrintItem { id: number; title: string; location?: string|null; fromPrice?: number|null; edition?: string|null; paper?: string|null; featured: boolean; published: boolean; thumbUrl?: string|null; externalUrl?: string|null }
-interface EditorFields { title: string; caption: string; description: string; alt: string; captureDate: string; location: string; camera: string; status: 'draft'|'published'; featured: boolean; printEnabled: boolean; homepage: boolean }
-
-const C = { bg:'#0b0a09', gold:'#c8923c', goldL:'#e3b463', text:'#f4f1ec', muted:'rgba(244,241,236,0.6)', dim:'rgba(244,241,236,0.38)', border:'rgba(255,255,255,0.08)' }
-const card: React.CSSProperties = { borderRadius:18, padding:22, background:'rgba(20,18,16,0.6)', backdropFilter:'blur(22px)', WebkitBackdropFilter:'blur(22px)', border:`1px solid ${C.border}`, boxShadow:'0 14px 40px rgba(0,0,0,0.35)' }
-const h3s: React.CSSProperties = { fontFamily:'var(--font-jost)', fontWeight:400, fontSize:16, letterSpacing:'0.04em', margin:0, color:C.text }
-const inp: React.CSSProperties = { width:'100%', padding:'11px 13px', borderRadius:10, background:'rgba(0,0,0,0.28)', border:'1px solid rgba(255,255,255,0.14)', color:C.text, fontFamily:'var(--font-manrope)', fontSize:13.5, outline:'none', boxSizing:'border-box' }
-const saveBtn: React.CSSProperties = { padding:'11px 20px', borderRadius:11, border:'1px solid rgba(200,146,60,0.5)', background:'linear-gradient(180deg,#c8923c,#b07c2e)', color:'#1a130a', fontWeight:600, fontSize:12.5, cursor:'pointer', fontFamily:'var(--font-manrope)' }
-const ghostBtn: React.CSSProperties = { padding:'10px 16px', borderRadius:11, border:'1px solid rgba(255,255,255,0.14)', background:'rgba(255,255,255,0.04)', color:C.text, fontSize:12.5, fontWeight:500, cursor:'pointer', fontFamily:'var(--font-manrope)' }
-const fLabel: React.CSSProperties = { display:'block', fontSize:11, letterSpacing:'0.04em', color:C.muted, marginBottom:6 }
-const togStyle = (on: boolean): React.CSSProperties => ({ width:38, height:22, borderRadius:22, background:on?'linear-gradient(180deg,#c8923c,#a8772c)':'rgba(255,255,255,0.12)', position:'relative', display:'inline-block', border:'none', cursor:'pointer', flexShrink:0 })
-const knobStyle = (on: boolean): React.CSSProperties => ({ position:'absolute', top:2, [on?'right':'left']:2, width:18, height:18, borderRadius:'50%', background:on?'#fff':'#e8e3da', pointerEvents:'none' })
-
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return <button onClick={onClick} style={togStyle(on)}><span style={knobStyle(on)} /></button>
+interface Msg { id: number; name: string; email: string; body: string; status: string; createdAt: string }
+interface PrintItem {
+  id: number; title: string; location?: string|null; fromPrice?: number|null
+  featured: boolean; published: boolean; thumbUrl?: string|null
+  externalUrl?: string|null; mediaId?: number|null
 }
-function TRow({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
-  return <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', fontSize:13, color:'rgba(244,241,236,0.85)', borderBottom:'1px solid rgba(255,255,255,0.05)' }}><span>{label}</span><Toggle on={on} onClick={onClick} /></div>
+interface Collection {
+  id: number; title: string; slug: string; description?: string|null
+  published: boolean; coverMediaId?: number|null; coverUrl?: string|null; itemCount?: number
 }
 
-const NAV: [Screen, string, React.ReactNode][] = [
-  ['dashboard','Dashboard',     <><rect key="a" x="3" y="3" width="7" height="7" rx="1.5"/><rect key="b" x="14" y="3" width="7" height="7" rx="1.5"/><rect key="c" x="3" y="14" width="7" height="7" rx="1.5"/><rect key="d" x="14" y="14" width="7" height="7" rx="1.5"/></>],
-  ['media','Media Library',     <><rect key="a" x="3" y="4" width="18" height="16" rx="2.5"/><circle key="b" cx="8.5" cy="9.5" r="1.7"/><path key="c" d="m4 18 5-5 4 4 3-3 4 4"/></>],
-  ['portfolio','Portfolio',     <><rect key="a" x="3" y="3.5" width="18" height="17" rx="2.4" opacity=".4"/><path key="b" d="M5 7h14M4 12h16M6 17h12"/></>],
-  ['homepage','Homepage',       <><path key="a" d="M4 11 12 4l8 7"/><path key="b" d="M6 10v9h12v-9"/></>],
-  ['print','Print Room',        <><rect key="a" x="4" y="4" width="16" height="16" rx="1.6"/><rect key="b" x="8" y="8" width="8" height="8" rx="1"/></>],
-  ['about','About',             <><circle key="a" cx="12" cy="8.5" r="3.5"/><path key="b" d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></>],
-  ['messages','Messages',       <><rect key="a" x="3" y="5" width="18" height="14" rx="2.4"/><path key="b" d="m4 7 8 6 8-6"/></>],
-  ['seo','SEO',                 <><circle key="a" cx="11" cy="11" r="6.5"/><path key="b" d="m20 20-4-4"/></>],
-  ['settings','Settings',       <><circle key="a" cx="16" cy="7" r="2.1"/><circle key="b" cx="8" cy="12" r="2.1"/><circle key="c" cx="13" cy="17" r="2.1"/><path key="d" d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h7M15 17h5"/></>],
-]
+const T='#f4f1ec', G='#c8923c', GL='#e3b463', MT='rgba(244,241,236,0.5)', BR='rgba(255,255,255,0.08)', S='rgba(16,14,12,0.65)'
+const card: React.CSSProperties = { borderRadius:16, background:S, border:`1px solid ${BR}`, backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)' }
+const field: React.CSSProperties = { width:'100%', padding:'10px 13px', borderRadius:9, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.1)', color:T, fontFamily:'var(--font-manrope)', fontSize:13.5, outline:'none', boxSizing:'border-box' }
+const lbl: React.CSSProperties = { display:'block', fontSize:10.5, letterSpacing:'0.06em', textTransform:'uppercase', color:MT, marginBottom:5 }
+const primaryBtn: React.CSSProperties = { padding:'11px 22px', borderRadius:10, border:'1px solid rgba(200,146,60,0.5)', background:'linear-gradient(180deg,#d49a40,#b07c2e)', color:'#1a130a', fontWeight:700, fontSize:13, cursor:'pointer', fontFamily:'var(--font-manrope)' }
+const ghostBtn: React.CSSProperties = { padding:'10px 18px', borderRadius:10, border:`1px solid ${BR}`, background:'rgba(255,255,255,0.04)', color:T, fontSize:13, cursor:'pointer', fontFamily:'var(--font-manrope)' }
 
-const TITLES: Record<Screen,string> = { dashboard:'Dashboard', media:'Media Library', editor:'Image Editor', messages:'Messages', homepage:'Homepage Manager', about:'About', portfolio:'Portfolio Manager', print:'Print Room Manager', seo:'SEO', settings:'Settings' }
-const CRUMBS: Record<Screen,string> = { dashboard:'Overview', media:'Photography', editor:'Media Library', messages:'Inbox', homepage:'Public Site', about:'Public Site', portfolio:'Collections', print:'Commerce', seo:'Discovery', settings:'Configuration' }
-const DEV_LABEL = { desktop:'Desktop hero', tablet:'Tablet', mobile:'Mobile hero', fullscreen:'Fullscreen' }
-const DEV_ASPECT = { desktop:'16/9', tablet:'4/3', mobile:'9/16', fullscreen:'21/9' }
+function Flag({ icon, label, on, onClick }: { icon: string; label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 13px', borderRadius:8, border:`1px solid ${on?'rgba(200,146,60,0.55)':'rgba(255,255,255,0.09)'}`, background:on?'rgba(200,146,60,0.16)':'rgba(255,255,255,0.03)', color:on?GL:'rgba(244,241,236,0.4)', fontSize:12, cursor:'pointer', fontFamily:'var(--font-manrope)', fontWeight:on?600:400, transition:'all .18s' }}>
+      <span style={{ fontSize:11 }}>{icon}</span>{label}
+    </button>
+  )
+}
+function StatusBadge({ status }: { status: string }) {
+  const c: Record<string,[string,string]> = { published:['#5fb87a','rgba(95,184,122,0.15)'], draft:['#c8923c','rgba(200,146,60,0.12)'], archived:['#8aa0c8','rgba(138,160,200,0.12)'] }
+  const [dot,bg] = c[status] ?? ['#888','rgba(136,136,136,0.12)']
+  return <span style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:6, background:bg, fontSize:11, fontWeight:600, color:dot }}><span style={{ width:5, height:5, borderRadius:'50%', background:dot }}/>{status}</span>
+}
 
 export default function AdminPanel() {
-  const [screen, setScreen] = useState<Screen>('dashboard')
+  const [tab, setTab] = useState<Tab>('photos')
   const [toast, setToast] = useState('')
-  const [toastError, setToastError] = useState(false)
+  const [toastErr, setToastErr] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [dataLoading, setDataLoading] = useState(true)
-  const fileRef = useRef<HTMLInputElement>(null)
-
-  const [media, setMedia] = useState<MediaItem[]>([])
-  const [messages, setMessages] = useState<MsgItem[]>([])
-  const [categories, setCategories] = useState<string[]>([])
-  const [prints, setPrints] = useState<PrintItem[]>([])
-  const [msgFolder, setMsgFolder] = useState('New')
-  const [openMsg, setOpenMsg] = useState<MsgItem|null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [uploads, setUploads] = useState<Array<{ name: string; done: boolean; error?: string }>>([])
+  const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
-  const [sort, setSort] = useState<'newest'|'oldest'>('newest')
-  const [selected, setSelected] = useState<Record<number,boolean>>({})
+  const fileRef = useRef<HTMLInputElement>(null)
+  const slotFileRef = useRef<HTMLInputElement>(null)
+  const [pickerSearch, setPickerSearch] = useState('')
 
-  const [editItem, setEditItem] = useState<MediaItem|null>(null)
-  const [editId, setEditId] = useState<number|null>(null)
-  const [edFields, setEdFields] = useState<EditorFields>({ title:'', caption:'', description:'', alt:'', captureDate:'', location:'', camera:'', status:'draft', featured:false, printEnabled:false, homepage:false })
-  const [device, setDevice] = useState<'desktop'|'tablet'|'mobile'|'fullscreen'>('desktop')
-  const [zoom, setZoom] = useState(118)
-  const [posX, setPosX] = useState(50)
-  const [posY, setPosY] = useState(42)
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [editing, setEditing] = useState<Photo|null>(null)
+  const [ef, setEf] = useState({ title:'', location:'', caption:'', alt:'', captureDate:'', camera:'', description:'', featured:false, printEnabled:false, homepage:false })
 
   const [hpEyebrow, setHpEyebrow] = useState('BEYOND THE FRAME.')
-  const [hpTitle, setHpTitle]   = useState('A Different Way of Seeing Beauty.')
-  const [hpSub,   setHpSub]     = useState('Wildlife, landscapes, and natural moments\nphotographed with atmosphere and intention.')
-  const [abBio,         setAbBio]         = useState("I'm Nic — a nature, wildlife and landscape photographer.")
-  const [abStoryTitle,  setAbStoryTitle]  = useState('Beyond the Frame')
-  const [abStory,       setAbStory]       = useState('')
-  const [catDraft,      setCatDraft]      = useState('')
+  const [hpTitle, setHpTitle] = useState('A Different Way of Seeing Beauty.')
+  const [hpSub, setHpSub] = useState('')
+  const [abBio, setAbBio] = useState('')
+  const [storyTitle, setStoryTitle] = useState('')
+  const [story, setStory] = useState('')
+  const [cats, setCats] = useState<string[]>([])
+  const [catDraft, setCatDraft] = useState('')
+  const [msgs, setMsgs] = useState<Msg[]>([])
+  const [openMsg, setOpenMsg] = useState<Msg|null>(null)
+  const [prints, setPrints] = useState<PrintItem[]>([])
+  const [collections, setCollections] = useState<Collection[]>([])
+  const [editingCol, setEditingCol] = useState<Collection|null>(null)
+  const [colItems, setColItems] = useState<Photo[]>([])         // photos in the collection being edited, in order
+  const [colDesc, setColDesc] = useState('')
+  const [colTitle, setColTitle] = useState('')
+  const [colAddOpen, setColAddOpen] = useState(false)
+  const [dragIdx, setDragIdx] = useState<number|null>(null)     // collection item drag
+  const [gridDragId, setGridDragId] = useState<number|null>(null) // photo grid drag
+  const [pickerOpen, setPickerOpen] = useState<number|null>(null)
 
-  const [seoTitle,     setSeoTitle]     = useState('Nic Miller Photography — Fine Art Nature & Landscape Prints')
-  const [seoDesc,      setSeoDesc]      = useState('Limited-edition nature, wildlife and landscape prints.')
-  const [seoSlug,      setSeoSlug]      = useState('/')
-  const [seoCanonical, setSeoCanonical] = useState('https://nicmiller.photography')
-  const [seoIndex,     setSeoIndex]     = useState(true)
+  const [heroUrl, setHeroUrl] = useState<string|null>(null)
+  const [portraitUrl, setPortraitUrl] = useState<string|null>(null)
+  const [storyUrl, setStoryUrl] = useState<string|null>(null)
+  const [imgSlot, setImgSlot] = useState<'hero'|'portrait'|'story'|null>(null)
 
-  const [stEmail,   setStEmail]   = useState('nmiller3300@gmail.com')
-  const [stIg,      setStIg]      = useState('nicmiller.photography')
-  const [stFb,      setStFb]      = useState('nicmiller.photography')
-  const [stCopy,    setStCopy]    = useState('© 2026 Nic Miller Photography. All rights reserved.')
-  const [stStore,   setStStore]   = useState('https://nicmillerphotography.pixieset.com')
-  const [stQuality, setStQuality] = useState(82)
-  const [stSess,    setStSess]    = useState(120)
+  const [stEmail, setStEmail] = useState('nmiller3300@gmail.com')
+  const [stIg, setStIg] = useState('nicmiller.photography')
+  const [stFb, setStFb] = useState('nicmiller.photography')
+  const [stCopy, setStCopy] = useState('© 2026 Nic Miller Photography. All rights reserved.')
+  const [stStore, setStStore] = useState('https://nicmillerphotography.pixieset.com')
 
-  function toast$(m: string, error = false) { setToast(m); setToastError(error); setTimeout(()=>setToast(''), 3000) }
+  function toast$(m: string, err = false) { setToast(m); setToastErr(err); setTimeout(() => setToast(''), 3500) }
 
   async function api(method: string, path: string, body?: unknown) {
-    const res = await fetch(path, { method, headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined })
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `${method} ${path} failed ${res.status}`) }
+    const res = await fetch(path, { method, headers: body?{'Content-Type':'application/json'}:{}, body: body?JSON.stringify(body):undefined })
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(typeof e.error==='string'?e.error:`HTTP ${res.status}`) }
     return res.json()
   }
 
-  const loadMedia = useCallback(async () => {
-    try {
-      const r = await api('GET', '/api/admin/media?sort=newest&page=1')
-      if (r.items) setMedia(r.items)
-    } catch { /* silently keep existing */ }
+  const loadPhotos = useCallback(async () => {
+    try { const r = await api('GET','/api/admin/media?sort=newest'); if(r.items) setPhotos(r.items) } catch {}
   }, [])
 
   useEffect(() => {
-    async function load() {
-      setDataLoading(true)
+    async function init() {
       try {
-        const [mR, msgR, catsR, prR, contR, seoR, setR] = await Promise.allSettled([
-          api('GET', '/api/admin/media?sort=newest&page=1'),
-          api('GET', '/api/admin/messages'),
-          api('GET', '/api/admin/categories'),
-          api('GET', '/api/admin/prints'),
-          api('GET', '/api/admin/content'),
-          api('GET', '/api/admin/seo'),
-          api('GET', '/api/admin/settings'),
+        const [mR, msgR, catsR, prR, contR, setR, colR] = await Promise.allSettled([
+          api('GET','/api/admin/media?sort=manual'), api('GET','/api/admin/messages'),
+          api('GET','/api/admin/categories'), api('GET','/api/admin/prints'),
+          api('GET','/api/admin/content'), api('GET','/api/admin/settings'),
+          api('GET','/api/admin/collections'),
         ])
-        if (mR.status === 'fulfilled' && mR.value.items)    setMedia(mR.value.items)
-        if (msgR.status === 'fulfilled' && msgR.value.items) setMessages(msgR.value.items)
-        if (catsR.status === 'fulfilled' && Array.isArray(catsR.value)) setCategories(catsR.value.map((c: {name:string}) => c.name))
-        if (prR.status === 'fulfilled' && Array.isArray(prR.value)) setPrints(prR.value)
-        if (contR.status === 'fulfilled') {
-          const c = contR.value
-          if (c.heroEyebrow)  setHpEyebrow(c.heroEyebrow)
-          if (c.heroTitle)    setHpTitle(c.heroTitle)
-          if (c.heroSubtitle) setHpSub(c.heroSubtitle)
-          if (c.aboutBio)     setAbBio(c.aboutBio)
-          if (c.storyTitle)   setAbStoryTitle(c.storyTitle)
-          if (c.story && Array.isArray(c.story)) setAbStory(c.story.join('\n\n'))
-        }
-        if (seoR.status === 'fulfilled') {
-          const s = seoR.value
-          if (s.title)       setSeoTitle(s.title)
-          if (s.description) setSeoDesc(s.description)
-          if (s.slug)        setSeoSlug(s.slug)
-          if (s.canonical)   setSeoCanonical(s.canonical)
-          setSeoIndex(s.indexable !== false)
-        }
-        if (setR.status === 'fulfilled') {
-          const s = setR.value
-          if (s.email)          setStEmail(s.email)
-          if (s.instagram)      setStIg(s.instagram)
-          if (s.facebook)       setStFb(s.facebook)
-          if (s.copyright)      setStCopy(s.copyright)
-          if (s.storeUrl)       setStStore(s.storeUrl)
-          if (s.imageQuality)   setStQuality(s.imageQuality)
-          if (s.sessionMinutes) setStSess(s.sessionMinutes)
-        }
-      } catch (e) { console.error('Init load error', e) }
-      setDataLoading(false)
+        if(mR.status==='fulfilled'&&mR.value.items) setPhotos(mR.value.items)
+        if(msgR.status==='fulfilled'&&msgR.value.items) setMsgs(msgR.value.items)
+        if(catsR.status==='fulfilled'&&Array.isArray(catsR.value)) setCats(catsR.value.map((c:{name:string})=>c.name))
+        if(prR.status==='fulfilled'&&Array.isArray(prR.value)) setPrints(prR.value)
+        if(colR.status==='fulfilled'&&Array.isArray(colR.value)) setCollections(colR.value)
+        if(contR.status==='fulfilled'){const c=contR.value;if(c.heroEyebrow)setHpEyebrow(c.heroEyebrow);if(c.heroTitle)setHpTitle(c.heroTitle);if(c.heroSubtitle)setHpSub(c.heroSubtitle);if(c.aboutBio)setAbBio(c.aboutBio);if(c.storyTitle)setStoryTitle(c.storyTitle);if(c.story&&Array.isArray(c.story))setStory(c.story.join('\n\n'));if(c.portraitUrl)setPortraitUrl(c.portraitUrl);if(c.storyImageUrl)setStoryUrl(c.storyImageUrl)}
+        if(setR.status==='fulfilled'){const s=setR.value;if(s.email)setStEmail(s.email);if(s.instagram)setStIg(s.instagram);if(s.facebook)setStFb(s.facebook);if(s.copyright)setStCopy(s.copyright);if(s.storeUrl)setStStore(s.storeUrl)}
+        try { const hR = await api('GET','/api/admin/media?status=homepage&sort=newest'); if(hR.items?.[0]?.thumbUrl) setHeroUrl(hR.items[0].thumbUrl) } catch {}
+      } catch {}
     }
-    load()
+    init()
   }, [])
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = [...(e.target.files || [])]
+  async function processFiles(files: File[]) {
     if (!files.length) return
-    setLoading(true)
-    toast$('Uploading ' + files.length + ' photo' + (files.length > 1 ? 's' : '') + '…')
-    let successCount = 0
-    for (const file of files) {
-      const form = new FormData()
-      form.append('file', file)
+    setUploads(files.map(f => ({ name:f.name, done:false })))
+    let ok = 0
+    for (let i = 0; i < files.length; i++) {
+      const form = new FormData(); form.append('file', files[i])
       try {
         const res = await fetch('/api/admin/upload', { method:'POST', body:form })
         const data = await res.json()
-        if (!res.ok) {
-          if (data.code === 'NO_BLOB_TOKEN') {
-            toast$('⚠ Blob storage not connected. Go to Vercel → Storage → Blob → Connect, then redeploy.', true)
-            break
-          }
-          toast$('Upload failed: ' + (data.error || res.status), true)
-        } else {
-          successCount++
-        }
-      } catch (err) { toast$('Upload error: ' + String(err), true) }
+        if (!res.ok) { setUploads(prev=>prev.map((u,j)=>j===i?{...u,error:data.error||'Failed'}:u)); if(data.code==='NO_BLOB_TOKEN'){toast$('Blob storage not connected',true);break} }
+        else { setUploads(prev=>prev.map((u,j)=>j===i?{...u,done:true}:u)); ok++ }
+      } catch(err) { setUploads(prev=>prev.map((u,j)=>j===i?{...u,error:String(err)}:u)) }
     }
-    if (successCount > 0) {
-      toast$(successCount + ' photo' + (successCount > 1 ? 's' : '') + ' uploaded successfully')
-      await loadMedia()
-      setScreen('media')
-      setFilter('drafts')
-    }
-    setLoading(false)
-    e.target.value = ''
+    if (ok>0) { await loadPhotos(); toast$(`✓ ${ok} photo${ok>1?'s':''} uploaded`) }
+    setTimeout(()=>setUploads([]), 3500)
   }
+  function onDrop(e: DragEvent) { e.preventDefault(); setDragging(false); processFiles([...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'))) }
+  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) { processFiles([...(e.target.files||[])]); e.target.value='' }
 
-  function openEditor(item: MediaItem) {
-    setEditId(item.id); setEditItem(item)
-    setEdFields({ title:item.title, caption:'', description:'', alt:'', captureDate:'', location:item.location||'', camera:'', status:item.status as 'draft'|'published', featured:item.featured||false, printEnabled:item.printEnabled||false, homepage:item.homepage||false })
-    setScreen('editor')
+  function openEditor(p: Photo) {
+    setEditing(p)
+    setEf({ title:p.title, location:p.location||'', caption:'', alt:'', captureDate:'', camera:'', description:'', featured:p.featured||false, printEnabled:p.printEnabled||false, homepage:p.homepage||false })
   }
-
-  async function saveEditor(status: 'draft'|'published') {
-    if (!editId) return
+  async function savePhoto(status: 'draft'|'published') {
+    if (!editing) return
     setLoading(true)
+    try { await api('PATCH',`/api/admin/media/${editing.id}`,{...ef,status}); setPhotos(prev=>prev.map(p=>p.id===editing.id?{...p,...ef,status}:p)); toast$(status==='published'?'✓ Published — live on your site':'✓ Saved as draft'); setEditing(null) }
+    catch(err){toast$(String(err),true)}
+    setLoading(false)
+  }
+  async function deletePhoto() {
+    if (!editing||!confirm('Delete this photo permanently?')) return
+    setLoading(true)
+    try { await api('DELETE',`/api/admin/media/${editing.id}`); setPhotos(prev=>prev.filter(p=>p.id!==editing.id)); toast$('Photo deleted'); setEditing(null) }
+    catch(err){toast$(String(err),true)}
+    setLoading(false)
+  }
+  async function setImageSlot(slot: 'hero'|'portrait'|'story', photo: Photo) {
     try {
-      await api('PATCH', `/api/admin/media/${editId}`, { ...edFields, status })
-      setMedia(prev => prev.map(m => m.id === editId ? { ...m, ...edFields, status } : m))
-      toast$(status === 'published' ? 'Published — live on the site' : 'Saved as draft')
-      setScreen('media')
-    } catch (err) { toast$(String(err), true) }
-    setLoading(false)
+      if (slot==='hero') { await api('PATCH',`/api/admin/media/${photo.id}`,{homepage:true,status:'published'}); setHeroUrl(photo.thumbUrl||null); setPhotos(prev=>prev.map(p=>p.id===photo.id?{...p,homepage:true}:p)); toast$('✓ Hero image updated') }
+      else { const url=photo.thumbUrl||''; await api('PATCH','/api/admin/content',{[slot==='portrait'?'portraitUrl':'storyImageUrl']:url}); if(slot==='portrait')setPortraitUrl(url);else setStoryUrl(url); toast$(`✓ ${slot==='portrait'?'Portrait':'Story banner'} updated`) }
+      setImgSlot(null)
+    } catch(err){toast$(String(err),true)}
   }
-
-  async function saveHomepage() {
+  async function uploadToSlot(slot: 'hero'|'portrait'|'story', file: File) {
     setLoading(true)
-    try { await api('PATCH', '/api/admin/content', { heroEyebrow:hpEyebrow, heroTitle:hpTitle, heroSubtitle:hpSub }); toast$('Homepage saved — live on the site') }
-    catch (err) { toast$(String(err), true) }
-    setLoading(false)
-  }
-
-  async function saveAbout() {
-    setLoading(true)
+    toast$('Uploading…')
     try {
-      const story = abStory.split(/\n\n+/).map(s=>s.trim()).filter(Boolean)
-      await api('PATCH', '/api/admin/content', { aboutBio:abBio, storyTitle:abStoryTitle, story })
-      toast$('About & story saved')
-    } catch (err) { toast$(String(err), true) }
+      const form = new FormData(); form.append('file', file)
+      const res = await fetch('/api/admin/upload', { method:'POST', body:form })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      await loadPhotos()
+      const newId = data.id
+      const url = data.thumbUrl || data.thumb_url || null
+      if (slot==='hero') {
+        await api('PATCH',`/api/admin/media/${newId}`,{homepage:true,status:'published'})
+        setHeroUrl(url); toast$('✓ Hero uploaded & set')
+      } else {
+        await api('PATCH','/api/admin/content',{[slot==='portrait'?'portraitUrl':'storyImageUrl']:url||''})
+        if(slot==='portrait')setPortraitUrl(url);else setStoryUrl(url)
+        toast$(`✓ ${slot==='portrait'?'Portrait':'Story banner'} uploaded & set`)
+      }
+      setImgSlot(null)
+    } catch(err){ toast$(String(err), true) }
     setLoading(false)
   }
-
-  async function saveCats() {
+  async function saveContent() {
     setLoading(true)
-    try {
-      for (const name of categories) await api('POST', '/api/admin/categories', { name }).catch(()=>{})
-      toast$('Categories saved')
-    } catch (err) { toast$(String(err), true) }
+    try { await api('PATCH','/api/admin/content',{heroEyebrow:hpEyebrow,heroTitle:hpTitle,heroSubtitle:hpSub,aboutBio:abBio,storyTitle,story:story.split(/\n\n+/).map(s=>s.trim()).filter(Boolean)}); toast$('✓ Content saved') }
+    catch(err){toast$(String(err),true)}
     setLoading(false)
   }
-
-  async function saveSeo() {
-    setLoading(true)
-    try { await api('PATCH', '/api/admin/seo', { title:seoTitle, description:seoDesc, slug:seoSlug, canonical:seoCanonical, indexable:seoIndex }); toast$('SEO saved') }
-    catch (err) { toast$(String(err), true) }
-    setLoading(false)
-  }
-
   async function savePrints() {
     setLoading(true)
-    try {
-      await api('PATCH', '/api/admin/prints', prints.map(p=>({ id:p.id, title:p.title, location:p.location, fromPrice:p.fromPrice, featured:p.featured, published:p.published })))
-      toast$('Print Room saved')
-    } catch (err) { toast$(String(err), true) }
+    try { await api('PATCH','/api/admin/prints',prints.map(p=>({...p,media_id:p.mediaId}))); toast$('✓ Prints saved') }
+    catch(err){toast$(String(err),true)}
     setLoading(false)
+  }
+
+  // ── Collections ──
+  async function reloadCollections() {
+    try { const r = await api('GET','/api/admin/collections'); if(Array.isArray(r)) setCollections(r) } catch {}
+  }
+  async function createCollection() {
+    setLoading(true)
+    try {
+      const r = await api('POST','/api/admin/collections',{ title:'New Series' })
+      await reloadCollections()
+      const fresh: Collection = { id:r.id, title:'New Series', slug:r.slug, published:false, itemCount:0 }
+      openCollection(fresh)
+      toast$('✓ Series created — add photos')
+    } catch(err){toast$(String(err),true)}
+    setLoading(false)
+  }
+  async function openCollection(c: Collection) {
+    setEditingCol(c); setColTitle(c.title); setColDesc(c.description||'')
+    // Load its items in order
+    try {
+      const r = await api('GET',`/api/admin/collections`)
+      // fetch items via a dedicated read: reuse media list + collection detail
+      const detail = await fetch(`/api/admin/collections/${c.id}/items`).then(res=>res.ok?res.json():[]).catch(()=>[])
+      if (Array.isArray(detail) && detail.length) {
+        setColItems(detail.map((d:{id:number,title:string,thumbUrl:string|null,status:string})=>({ id:d.id, title:d.title, thumbUrl:d.thumbUrl, status:d.status })))
+      } else { setColItems([]) }
+      void r
+    } catch { setColItems([]) }
+  }
+  async function saveCollection() {
+    if (!editingCol) return
+    setLoading(true)
+    try {
+      await api('PATCH','/api/admin/collections',{
+        id: editingCol.id, title: colTitle, description: colDesc,
+        items: colItems.map(p=>p.id),
+      })
+      await reloadCollections()
+      toast$('✓ Series saved')
+      setEditingCol(null)
+    } catch(err){toast$(String(err),true)}
+    setLoading(false)
+  }
+  async function publishCollection(pub: boolean) {
+    if (!editingCol) return
+    setLoading(true)
+    try {
+      await api('PATCH','/api/admin/collections',{
+        id: editingCol.id, title: colTitle, description: colDesc,
+        items: colItems.map(p=>p.id), published: pub,
+      })
+      await reloadCollections()
+      toast$(pub?'✓ Series published — live on your portfolio':'✓ Saved as draft')
+      setEditingCol(null)
+    } catch(err){toast$(String(err),true)}
+    setLoading(false)
+  }
+  async function deleteCollection() {
+    if (!editingCol || !confirm('Delete this series? The photos stay in your library.')) return
+    setLoading(true)
+    try { await api('DELETE',`/api/admin/collections?id=${editingCol.id}`); await reloadCollections(); toast$('Series deleted'); setEditingCol(null) }
+    catch(err){toast$(String(err),true)}
+    setLoading(false)
+  }
+  // Reorder items within collection editor (drag)
+  function moveColItem(from: number, to: number) {
+    setColItems(prev => { const a=[...prev]; const [m]=a.splice(from,1); a.splice(to,0,m); return a })
+  }
+  // Reorder the main photo grid (drag) and persist
+  async function persistGridOrder(ordered: Photo[]) {
+    setPhotos(ordered)
+    try { await api('PATCH','/api/admin/media/reorder',{ order: ordered.map(p=>p.id) }) }
+    catch(err){ toast$(String(err),true) }
   }
 
   async function saveSettings() {
     setLoading(true)
-    try { await api('PATCH', '/api/admin/settings', { email:stEmail, instagram:stIg, facebook:stFb, copyright:stCopy, storeUrl:stStore, imageQuality:stQuality, sessionMinutes:stSess }); toast$('Settings saved') }
-    catch (err) { toast$(String(err), true) }
+    try { await api('PATCH','/api/admin/settings',{email:stEmail,instagram:stIg,facebook:stFb,copyright:stCopy,storeUrl:stStore}); toast$('✓ Settings saved') }
+    catch(err){toast$(String(err),true)}
     setLoading(false)
   }
-
-  async function openMsgItem(m: MsgItem) {
+  async function openMsgItem(m: Msg) {
     setOpenMsg(m)
-    if (m.status === 'New') {
-      await api('PATCH', `/api/admin/messages/${m.id}`, { status:'Read' }).catch(()=>{})
-      setMessages(prev => prev.map(x => x.id===m.id ? {...x,status:'Read'} : x))
-    }
+    if (m.status==='New') { await api('PATCH',`/api/admin/messages/${m.id}`,{status:'Read'}).catch(()=>{}); setMsgs(prev=>prev.map(x=>x.id===m.id?{...x,status:'Read'}:x)) }
   }
 
-  async function setMsgStatus(id: number, status: string) {
-    await api('PATCH', `/api/admin/messages/${id}`, { status }).catch(()=>{})
-    setMessages(prev => prev.map(m => m.id===id ? {...m,status} : m))
-    if (status === 'Archived') setOpenMsg(null)
-    toast$('Message ' + status.toLowerCase())
-  }
+  const newMsgs = msgs.filter(m=>m.status==='New').length
+  const filtered = photos.filter(p => {
+    const q=search.toLowerCase()
+    const mq = !search || p.title.toLowerCase().includes(q) || (p.location||'').toLowerCase().includes(q)
+    const mf = filter==='published'?p.status==='published':filter==='drafts'?p.status==='draft':filter==='featured'?p.featured:filter==='print'?p.printEnabled:filter==='homepage'?p.homepage:p.status!=='archived'
+    return mq && mf
+  })
 
-  const newMsgCount = messages.filter(m => m.status === 'New').length
-  const folderMsgs  = messages.filter(m => m.status === msgFolder)
-  const published   = media.filter(m => m.status === 'published').length
-  const drafts      = media.filter(m => m.status === 'draft').length
-  const printCount  = media.filter(m => m.printEnabled).length
+  const tabStyle = (a: boolean): React.CSSProperties => ({ padding:'9px 20px', borderRadius:10, fontFamily:'var(--font-manrope)', fontSize:13.5, cursor:'pointer', border:`1px solid ${a?'rgba(200,146,60,0.4)':BR}`, background:a?'rgba(200,146,60,0.12)':'transparent', color:a?GL:MT, fontWeight:a?600:400 })
+  const filterPill = (f: string, label: string) => (
+    <button key={f} onClick={()=>setFilter(f)} style={{ padding:'6px 14px', borderRadius:8, cursor:'pointer', fontFamily:'var(--font-manrope)', fontSize:12.5, border:`1px solid ${filter===f?'rgba(200,146,60,0.45)':BR}`, background:filter===f?'rgba(200,146,60,0.12)':'rgba(255,255,255,0.02)', color:filter===f?GL:MT, fontWeight:filter===f?600:400 }}>{label}</button>
+  )
 
-  function filteredMedia() {
-    let list = [...media]
-    if      (filter === 'published') list = list.filter(m => m.status === 'published')
-    else if (filter === 'drafts')    list = list.filter(m => m.status === 'draft')
-    else if (filter === 'featured')  list = list.filter(m => m.featured)
-    else if (filter === 'print')     list = list.filter(m => m.printEnabled)
-    else if (filter === 'homepage')  list = list.filter(m => m.homepage)
-    else if (filter === 'archived')  list = list.filter(m => m.status === 'archived')
-    else                             list = list.filter(m => m.status !== 'archived')
-    return sort === 'oldest' ? list.reverse() : list
-  }
-
-  const navStyle = (active: boolean): React.CSSProperties => ({ display:'flex', alignItems:'center', gap:12, width:'100%', padding:'11px 12px', borderRadius:11, border:`1px solid ${active?'rgba(200,146,60,0.4)':'transparent'}`, background:active?'linear-gradient(180deg,rgba(200,146,60,0.22),rgba(200,146,60,0.1))':'transparent', color:active?C.goldL:'rgba(244,241,236,0.7)', cursor:'pointer', fontFamily:'var(--font-manrope)', fontSize:13.5, textAlign:'left' })
-  const railBtn = (active: boolean): React.CSSProperties => ({ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', padding:'9px 11px', borderRadius:9, border:`1px solid ${active?'rgba(200,146,60,0.35)':'transparent'}`, background:active?'rgba(200,146,60,0.16)':'transparent', color:active?C.goldL:'rgba(244,241,236,0.62)', cursor:'pointer', fontFamily:'var(--font-manrope)', fontSize:12.5, marginBottom:2 })
-  const devBtn = (active: boolean): React.CSSProperties => ({ padding:'8px 13px', borderRadius:9, cursor:'pointer', fontFamily:'var(--font-manrope)', fontSize:12, border:`1px solid ${active?'rgba(200,146,60,0.45)':'rgba(255,255,255,0.1)'}`, background:active?'rgba(200,146,60,0.16)':'rgba(255,255,255,0.04)', color:active?C.goldL:'rgba(244,241,236,0.7)' })
+  const IMG_SLOTS = [
+    { key:'hero' as const, label:'Homepage Hero', sub:'Main background image', url:heroUrl },
+    { key:'portrait' as const, label:'Your Portrait', sub:'About page & home strip', url:portraitUrl },
+    { key:'story' as const, label:'Story Banner', sub:'My Story page header', url:storyUrl },
+  ]
 
   return (
-    <div style={{ position:'relative', minHeight:'100vh', width:'100%', fontFamily:'var(--font-manrope)', color:C.text, background:C.bg, backgroundImage:'radial-gradient(120% 80% at 80% -10%, rgba(200,146,60,0.15), transparent 55%)' }}>
-      <div style={{ position:'fixed', inset:0, pointerEvents:'none', background:'radial-gradient(140% 120% at 50% 0%, transparent 60%, rgba(0,0,0,0.5))' }} />
-      <div style={{ position:'relative', display:'flex', gap:22, padding:22, minHeight:'100vh', alignItems:'flex-start' }}>
+    <div style={{ minHeight:'100vh', background:'#080706', color:T, fontFamily:'var(--font-manrope)' }}>
+      <header style={{ position:'sticky', top:0, zIndex:60, borderBottom:`1px solid ${BR}`, background:'rgba(8,7,6,0.94)', backdropFilter:'blur(24px)', WebkitBackdropFilter:'blur(24px)' }}>
+        <div style={{ maxWidth:1360, margin:'0 auto', padding:'0 28px', height:58, display:'flex', alignItems:'center', gap:16 }}>
+          <Link href="/" style={{ flexShrink:0, lineHeight:0 }}><Image src="/nm-wordmark-white.png" alt="NM" width={108} height={28} style={{ height:28, width:'auto' }}/></Link>
+          <div style={{ flex:1, display:'flex', justifyContent:'center', gap:5 }}>
+            <button onClick={()=>setTab('photos')} style={tabStyle(tab==='photos')}>Photos</button>
+            <button onClick={()=>setTab('collections')} style={tabStyle(tab==='collections')}>Series</button>
+            <button onClick={()=>setTab('content')} style={tabStyle(tab==='content')}>Content {newMsgs>0&&<span style={{ marginLeft:5, padding:'1px 7px', borderRadius:8, background:G, color:'#1a130a', fontSize:10, fontWeight:700 }}>{newMsgs}</span>}</button>
+            <button onClick={()=>setTab('settings')} style={tabStyle(tab==='settings')}>Settings</button>
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            <button onClick={()=>fileRef.current?.click()} style={{ ...primaryBtn, display:'flex', alignItems:'center', gap:7, padding:'8px 16px', fontSize:12.5 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>Upload</button>
+            <Link href="/" target="_blank" style={{ padding:'8px 13px', borderRadius:9, border:`1px solid ${BR}`, color:MT, fontSize:12, whiteSpace:'nowrap' }}>View site ↗</Link>
+            <div style={{ width:32, height:32, borderRadius:'50%', background:'rgba(200,146,60,0.18)', border:'1px solid rgba(200,146,60,0.28)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:G }}>NM</div>
+          </div>
+        </div>
+      </header>
 
-        {/* SIDEBAR */}
-        <aside style={{ position:'sticky', top:22, width:248, flexShrink:0, borderRadius:22, padding:'20px 16px', background:'linear-gradient(180deg,rgba(26,23,20,0.78),rgba(16,14,12,0.72))', backdropFilter:'blur(28px)', WebkitBackdropFilter:'blur(28px)', border:'1px solid rgba(255,255,255,0.08)', boxShadow:'0 24px 60px rgba(0,0,0,0.5)' }}>
-          <Link href="/" style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 8px 18px' }}>
-            <Image src="/nm-wordmark-white.png" alt="Nic Miller Photography" width={140} height={34} style={{ height:34, width:'auto' }} />
-          </Link>
-          <div style={{ height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.1),transparent)', margin:'0 4px 16px' }} />
-          <nav style={{ display:'flex', flexDirection:'column', gap:3 }}>
-            {NAV.map(([key, label, icon]) => (
-              <button key={key} onClick={() => setScreen(key)} style={navStyle(screen === key || (key === 'media' && screen === 'editor'))}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">{icon}</svg>
-                <span style={{ flex:1, textAlign:'left' }}>{label}</span>
-                {key === 'messages' && newMsgCount > 0 && <span style={{ fontSize:10, fontWeight:700, color:'#1a130a', background:C.gold, borderRadius:10, padding:'1px 7px' }}>{newMsgCount}</span>}
+      <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFileInput} style={{ display:'none' }}/>
+      <input ref={slotFileRef} type="file" accept="image/*" onChange={e=>{ const f=e.target.files?.[0]; if(f&&imgSlot)uploadToSlot(imgSlot,f); e.target.value='' }} style={{ display:'none' }}/>
+
+      {/* ── Full-screen image picker for site-image slots ── */}
+      {imgSlot && (
+        <div onClick={()=>{setImgSlot(null);setPickerSearch('')}} style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(5,4,3,0.86)', backdropFilter:'blur(12px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ width:'100%', maxWidth:880, maxHeight:'86vh', display:'flex', flexDirection:'column', borderRadius:18, background:'#0d0b0a', border:`1px solid ${BR}`, boxShadow:'0 40px 100px rgba(0,0,0,0.6)', overflow:'hidden' }}>
+            {/* Header */}
+            <div style={{ padding:'18px 24px', borderBottom:`1px solid ${BR}`, display:'flex', alignItems:'center', gap:14 }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontFamily:'var(--font-jost)', fontSize:18 }}>Set {imgSlot==='hero'?'Homepage Hero':imgSlot==='portrait'?'Your Portrait':'Story Banner'}</div>
+                <div style={{ fontSize:12, color:MT, marginTop:2 }}>Upload a new photo or pick one from your library</div>
+              </div>
+              <button onClick={()=>slotFileRef.current?.click()} disabled={loading} style={{ ...primaryBtn, display:'flex', alignItems:'center', gap:7, padding:'9px 16px', fontSize:12.5 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
+                Upload new
               </button>
-            ))}
-          </nav>
-          <div style={{ height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)', margin:'16px 4px' }} />
-          <Link href="/" className="nm-h" style={{ display:'flex', alignItems:'center', gap:9, padding:'10px 12px', borderRadius:11, color:'rgba(244,241,236,0.55)', fontSize:12.5, border:'1px solid rgba(255,255,255,0.07)' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M9 5 16 12l-7 7"/></svg>
-            View public site
-          </Link>
-        </aside>
-
-        {/* MAIN */}
-        <main style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:22, paddingBottom:30 }}>
-          {/* Header */}
-          <header style={{ display:'flex', alignItems:'center', gap:18, padding:'14px 22px', borderRadius:18, background:'rgba(20,18,16,0.6)', backdropFilter:'blur(22px)', WebkitBackdropFilter:'blur(22px)', border:'1px solid rgba(255,255,255,0.07)', boxShadow:'0 14px 40px rgba(0,0,0,0.4)' }}>
-            <div style={{ minWidth:0 }}>
-              <div style={{ fontSize:11, letterSpacing:'0.22em', textTransform:'uppercase', color:C.gold }}>{CRUMBS[screen]}</div>
-              <div style={{ fontFamily:'var(--font-jost)', fontWeight:400, fontSize:21, letterSpacing:'0.02em', marginTop:3 }}>{TITLES[screen]}</div>
+              <button onClick={()=>{setImgSlot(null);setPickerSearch('')}} style={{ width:34, height:34, borderRadius:'50%', background:'rgba(255,255,255,0.06)', border:`1px solid ${BR}`, color:T, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
             </div>
-            <div style={{ flex:1 }} />
-            <button onClick={() => fileRef.current?.click()} disabled={loading} className="nm-h" style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 16px', borderRadius:12, border:'1px solid rgba(200,146,60,0.45)', background:'linear-gradient(180deg,rgba(200,146,60,0.92),rgba(176,124,46,0.92))', color:'#1a130a', fontWeight:600, fontSize:13, cursor:'pointer', boxShadow:'0 6px 18px rgba(200,146,60,0.3)', opacity:loading?0.7:1 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
-              {loading ? 'Uploading…' : 'Upload Photograph'}
+            {/* Search */}
+            <div style={{ padding:'14px 24px 0' }}>
+              <div style={{ position:'relative' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={MT} strokeWidth="1.8" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg>
+                <input value={pickerSearch} onChange={e=>setPickerSearch(e.target.value)} placeholder="Search your photos…" style={{ ...field, paddingLeft:34 }}/>
+              </div>
+            </div>
+            {/* Grid of ALL photos */}
+            <div style={{ padding:24, overflowY:'auto', flex:1 }}>
+              {(() => {
+                const pool = photos.filter(p => p.thumbUrl && (!pickerSearch || p.title.toLowerCase().includes(pickerSearch.toLowerCase()) || (p.location||'').toLowerCase().includes(pickerSearch.toLowerCase())))
+                if (pool.length === 0) return <div style={{ textAlign:'center', padding:'48px 20px', color:MT, fontSize:13.5 }}>No photos yet. Click &quot;Upload new&quot; above to add one.</div>
+                return (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:10 }}>
+                    {pool.map(p => (
+                      <button key={p.id} onClick={()=>setImageSlot(imgSlot, p)} style={{ padding:0, border:`1px solid ${BR}`, borderRadius:10, overflow:'hidden', cursor:'pointer', background:'#12100e', position:'relative', textAlign:'left' }}>
+                        <div style={{ position:'relative', aspectRatio:'4/3' }}>
+                          <img src={p.thumbUrl!} alt="" loading="lazy" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>
+                          {p.status!=='published' && <span style={{ position:'absolute', top:6, left:6, fontSize:9, padding:'2px 7px', borderRadius:5, background:'rgba(8,7,6,0.8)', color:G }}>draft</span>}
+                        </div>
+                        <div style={{ padding:'7px 9px', fontSize:11.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.title}</div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:200, padding:'11px 22px', borderRadius:12, background:'rgba(12,10,8,0.97)', border:`1px solid ${toastErr?'rgba(224,90,90,0.4)':'rgba(200,146,60,0.35)'}`, color:toastErr?'#e05a5a':GL, fontSize:13.5, boxShadow:'0 12px 40px rgba(0,0,0,0.6)', whiteSpace:'nowrap', maxWidth:'92vw' }}>{toast}</div>}
+
+      {uploads.length>0 && <div style={{ position:'fixed', bottom:68, right:24, zIndex:200, display:'flex', flexDirection:'column', gap:6, width:260 }}>{uploads.map((u,i)=>(
+        <div key={i} style={{ padding:'9px 13px', borderRadius:10, background:'rgba(12,10,8,0.96)', border:`1px solid ${u.error?'rgba(224,90,90,0.35)':u.done?'rgba(95,184,122,0.35)':BR}`, position:'relative', overflow:'hidden' }}>
+          {!u.done&&!u.error&&<div style={{ position:'absolute', bottom:0, left:0, height:2, background:G, animation:'progress 2s ease-in-out infinite' }}/>}
+          <div style={{ fontSize:12, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{u.name}</div>
+          <div style={{ fontSize:11, marginTop:2, color:u.error?'#e05a5a':u.done?'#5fb87a':MT }}>{u.error||(u.done?'✓ Done':'Uploading…')}</div>
+        </div>
+      ))}</div>}
+
+      <div style={{ maxWidth:1360, margin:'0 auto', padding:'28px 28px 80px' }}>
+
+        {tab==='photos' && !editing && (
+          <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))', gap:12 }}>
+              {[['Published',photos.filter(p=>p.status==='published').length,'#5fb87a'],['Drafts',photos.filter(p=>p.status==='draft').length,G],['Total',photos.length,'#8aa0c8'],['Messages',msgs.length,newMsgs>0?G:'#8aa0c8']].map(([label,count,color])=>(
+                <div key={label as string} style={{ ...card, padding:'16px 20px', display:'flex', alignItems:'center', gap:12 }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background:color as string, flexShrink:0 }}/>
+                  <span style={{ flex:1, fontSize:12.5, color:MT }}>{label}</span>
+                  <span style={{ fontFamily:'var(--font-jost)', fontSize:26, lineHeight:1 }}>{count}</span>
+                </div>
+              ))}
+            </div>
+            <div onDragOver={e=>{e.preventDefault();setDragging(true)}} onDragLeave={()=>setDragging(false)} onDrop={onDrop} onClick={()=>fileRef.current?.click()} style={{ border:`2px dashed ${dragging?G:'rgba(255,255,255,0.1)'}`, borderRadius:14, padding:'32px 24px', textAlign:'center', cursor:'pointer', background:dragging?'rgba(200,146,60,0.04)':'transparent', transition:'all .2s' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={dragging?G:'rgba(255,255,255,0.22)'} strokeWidth="1.6" style={{ display:'block', margin:'0 auto 10px' }}><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
+              <div style={{ fontSize:13.5, color:dragging?GL:MT }}>{dragging?'Drop to upload':'Drag photos here, or click to browse'}</div>
+              <div style={{ fontSize:11.5, color:'rgba(255,255,255,0.22)', marginTop:4 }}>JPEG · PNG · WEBP · up to 50 MB each</div>
+            </div>
+            {photos.length>0 && (
+              <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+                <div style={{ position:'relative', flex:'0 1 240px' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={MT} strokeWidth="1.8" style={{ position:'absolute', left:11, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg>
+                  <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" style={{ ...field, paddingLeft:32 }}/>
+                </div>
+                <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>{filterPill('all','All')}{filterPill('published','Published')}{filterPill('drafts','Drafts')}{filterPill('featured','Featured')}{filterPill('homepage','Hero')}{filterPill('print','For Sale')}</div>
+                {photos.filter(p=>p.status==='draft').length>0 && <button onClick={async()=>{const d=photos.filter(p=>p.status==='draft');if(!confirm(`Publish all ${d.length} drafts?`))return;setLoading(true);for(const p of d){try{await api('PATCH',`/api/admin/media/${p.id}`,{status:'published'})}catch{}}await loadPhotos();toast$('✓ All drafts published');setLoading(false)}} style={{ ...ghostBtn, marginLeft:'auto', fontSize:12, color:GL, borderColor:'rgba(200,146,60,0.25)' }}>Publish all drafts ({photos.filter(p=>p.status==='draft').length})</button>}
+              </div>
+            )}
+            {filter==='all' && !search && photos.length>1 && (
+              <div style={{ fontSize:11.5, color:MT, display:'flex', alignItems:'center', gap:7 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={G} strokeWidth="1.6"><path d="M5 9h14M5 15h14"/><path d="m8 6-3 3 3 3M16 18l3-3-3-3"/></svg>
+                Drag photos to set the order they appear on your portfolio.
+              </div>
+            )}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:12 }}>
+              {filtered.map((p, idx)=>{
+                const canDrag = filter==='all' && !search
+                return (
+                <button
+                  key={p.id}
+                  onClick={()=>openEditor(p)}
+                  draggable={canDrag}
+                  onDragStart={canDrag?()=>setGridDragId(p.id):undefined}
+                  onDragOver={canDrag?(e)=>e.preventDefault():undefined}
+                  onDrop={canDrag?async(e)=>{
+                    e.preventDefault()
+                    if(gridDragId===null||gridDragId===p.id){setGridDragId(null);return}
+                    const arr=[...photos]
+                    const from=arr.findIndex(x=>x.id===gridDragId)
+                    const to=arr.findIndex(x=>x.id===p.id)
+                    if(from<0||to<0){setGridDragId(null);return}
+                    const [m]=arr.splice(from,1); arr.splice(to,0,m)
+                    setGridDragId(null)
+                    await persistGridOrder(arr)
+                  }:undefined}
+                  style={{ padding:0, border:`1px solid ${gridDragId===p.id?'rgba(200,146,60,0.5)':BR}`, borderRadius:13, overflow:'hidden', cursor:canDrag?'grab':'pointer', background:'#100e0c', color:T, textAlign:'left', display:'flex', flexDirection:'column', opacity:gridDragId===p.id?0.5:1 }}
+                >
+                  <div style={{ position:'relative', aspectRatio:'4/3', width:'100%', overflow:'hidden' }}>
+                    {p.thumbUrl?<img src={p.thumbUrl} alt="" loading="lazy" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>:<div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1.4"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>}
+                    <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.55))' }}/>
+                    <div style={{ position:'absolute', top:8, left:8 }}><StatusBadge status={p.status}/></div>
+                    <div style={{ position:'absolute', top:8, right:8, display:'flex', gap:4 }}>
+                      {p.featured&&<span style={{ width:20, height:20, borderRadius:5, background:'rgba(8,7,6,0.75)', display:'flex', alignItems:'center', justifyContent:'center', color:GL, fontSize:10 }}>★</span>}
+                      {p.homepage&&<span style={{ width:20, height:20, borderRadius:5, background:'rgba(8,7,6,0.75)', display:'flex', alignItems:'center', justifyContent:'center', color:GL, fontSize:10 }}>⌂</span>}
+                      {p.printEnabled&&<span style={{ width:20, height:20, borderRadius:5, background:'rgba(8,7,6,0.75)', display:'flex', alignItems:'center', justifyContent:'center', color:GL, fontSize:10 }}>$</span>}
+                    </div>
+                  </div>
+                  <div style={{ padding:'9px 11px' }}>
+                    <div style={{ fontSize:12.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.title}</div>
+                    <div style={{ fontSize:11, color:MT, marginTop:2 }}>{p.location||p.orientation||'—'}</div>
+                  </div>
+                </button>
+              )})}
+            </div>
+            {filtered.length===0&&photos.length>0&&<div style={{ textAlign:'center', padding:'48px 20px', color:MT, fontSize:14 }}>No photos match this filter.</div>}
+          </div>
+        )}
+
+        {tab==='photos' && editing && (
+          <div style={{ display:'flex', flexDirection:'column', gap:22 }}>
+            <button onClick={()=>setEditing(null)} style={{ display:'flex', alignItems:'center', gap:6, alignSelf:'flex-start', background:'none', border:'none', color:MT, fontSize:13, cursor:'pointer', fontFamily:'var(--font-manrope)', padding:0 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 18 9 12l6-6"/></svg>Back to photos</button>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', gap:24, alignItems:'start' }}>
+              <div style={{ ...card, overflow:'hidden' }}>
+                {editing.thumbUrl?<img src={editing.thumbUrl} alt="" style={{ width:'100%', display:'block', maxHeight:'68vh', objectFit:'contain', background:'#0e0c0a' }}/>:<div style={{ aspectRatio:'4/3', display:'flex', alignItems:'center', justifyContent:'center', background:'#0e0c0a' }}><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1.2"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>}
+                <div style={{ padding:'12px 16px', display:'flex', gap:10, alignItems:'center' }}><StatusBadge status={editing.status}/><span style={{ fontSize:11.5, color:MT }}>{editing.orientation||'—'}</span><span style={{ fontSize:11.5, color:'rgba(255,255,255,0.25)' }}>· master preserved</span></div>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+                <div><label style={lbl}>Title</label><input value={ef.title} onChange={e=>setEf(p=>({...p,title:e.target.value}))} style={{ ...field, fontSize:17, fontFamily:'var(--font-jost)', fontWeight:300 }}/></div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:11 }}>
+                  <div><label style={lbl}>Location</label><input value={ef.location} onChange={e=>setEf(p=>({...p,location:e.target.value}))} placeholder="e.g. NC Zoo" style={field}/></div>
+                  <div><label style={lbl}>Capture date</label><input value={ef.captureDate} onChange={e=>setEf(p=>({...p,captureDate:e.target.value}))} style={field}/></div>
+                </div>
+                <div><label style={lbl}>Camera & lens</label><input value={ef.camera} onChange={e=>setEf(p=>({...p,camera:e.target.value}))} style={field}/></div>
+                <div><label style={lbl}>Caption</label><input value={ef.caption} onChange={e=>setEf(p=>({...p,caption:e.target.value}))} style={field}/></div>
+                <div><label style={lbl}>Alt text</label><input value={ef.alt} onChange={e=>setEf(p=>({...p,alt:e.target.value}))} style={field}/></div>
+                <div><label style={lbl}>Description / story</label><textarea value={ef.description} onChange={e=>setEf(p=>({...p,description:e.target.value}))} rows={3} style={{ ...field, resize:'vertical' }}/></div>
+                <div>
+                  <label style={{ ...lbl, marginBottom:8 }}>Flags</label>
+                  <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}>
+                    <Flag icon="★" label="Featured" on={ef.featured} onClick={()=>setEf(p=>({...p,featured:!p.featured}))}/>
+                    <Flag icon="⌂" label="Homepage hero" on={ef.homepage} onClick={()=>setEf(p=>({...p,homepage:!p.homepage}))}/>
+                    <Flag icon="$" label="For sale" on={ef.printEnabled} onClick={()=>setEf(p=>({...p,printEnabled:!p.printEnabled}))}/>
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:10, paddingTop:6 }}>
+                  <button onClick={()=>savePhoto('draft')} style={ghostBtn} disabled={loading}>Save draft</button>
+                  <button onClick={()=>savePhoto('published')} disabled={loading} style={{ ...primaryBtn, flex:1 }}>Publish to site →</button>
+                </div>
+                <button onClick={deletePhoto} disabled={loading} style={{ padding:'9px', borderRadius:10, border:'1px solid rgba(224,90,90,0.25)', background:'rgba(224,90,90,0.04)', color:'rgba(224,90,90,0.7)', fontSize:12.5, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>Delete permanently</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════ SERIES / COLLECTIONS TAB ══════════════════ */}
+        {tab==='collections' && !editingCol && (
+          <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+              <div>
+                <div style={{ fontFamily:'var(--font-jost)', fontSize:22 }}>Series</div>
+                <div style={{ fontSize:13, color:MT, marginTop:3 }}>Group related shots — like a multi-part wildlife session — into an ordered set.</div>
+              </div>
+              <button onClick={createCollection} disabled={loading} style={{ ...primaryBtn, display:'flex', alignItems:'center', gap:7 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
+                New Series
+              </button>
+            </div>
+            {collections.length===0 && (
+              <div style={{ ...card, padding:'48px 24px', textAlign:'center' }}>
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.4" style={{ margin:'0 auto 14px', display:'block' }}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                <div style={{ fontSize:14.5, color:T, marginBottom:6 }}>No series yet</div>
+                <div style={{ fontSize:13, color:MT, maxWidth:380, margin:'0 auto' }}>Create a series to keep a shoot together — for example your three-part Great Blue Heron set — instead of scattering them across the portfolio.</div>
+              </div>
+            )}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:16 }}>
+              {collections.map(c=>(
+                <button key={c.id} onClick={()=>openCollection(c)} style={{ padding:0, border:`1px solid ${BR}`, borderRadius:14, overflow:'hidden', cursor:'pointer', background:'#100e0c', color:T, textAlign:'left', display:'flex', flexDirection:'column' }}>
+                  <div style={{ position:'relative', aspectRatio:'3/2', background:'#12100e' }}>
+                    {c.coverUrl?<img src={c.coverUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>:<div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.4"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>}
+                    <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg,transparent 55%,rgba(0,0,0,0.6))' }}/>
+                    <div style={{ position:'absolute', top:8, left:8 }}><StatusBadge status={c.published?'published':'draft'}/></div>
+                  </div>
+                  <div style={{ padding:'11px 13px' }}>
+                    <div style={{ fontSize:14, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.title}</div>
+                    <div style={{ fontSize:11.5, color:MT, marginTop:2 }}>{c.itemCount||0} photo{(c.itemCount||0)===1?'':'s'}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Series editor ── */}
+        {tab==='collections' && editingCol && (
+          <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+            <button onClick={()=>setEditingCol(null)} style={{ display:'flex', alignItems:'center', gap:6, alignSelf:'flex-start', background:'none', border:'none', color:MT, fontSize:13, cursor:'pointer', fontFamily:'var(--font-manrope)', padding:0 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 18 9 12l6-6"/></svg>
+              Back to series
             </button>
-            <div style={{ width:1, height:26, background:'rgba(255,255,255,0.1)' }} />
-            <div style={{ width:34, height:34, borderRadius:'50%', background:'linear-gradient(135deg,#2a2620,#15120e)', border:'1px solid rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:C.gold }}>NM</div>
-          </header>
 
-          <input ref={fileRef} type="file" accept="image/*" multiple onChange={handleUpload} style={{ display:'none' }} />
-
-          {toast && (
-            <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:120, padding:'12px 22px', borderRadius:12, background:'rgba(20,18,16,0.96)', backdropFilter:'blur(20px)', border:`1px solid ${toastError?'rgba(224,113,90,0.5)':'rgba(200,146,60,0.4)'}`, color:toastError?'#e07259':C.goldL, fontSize:13, boxShadow:'0 14px 40px rgba(0,0,0,0.5)', animation:'nmfade .3s ease both', whiteSpace:'nowrap', maxWidth:'90vw' }}>{toast}</div>
-          )}
-
-          {dataLoading && (
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'60px', gap:12, color:C.muted }}>
-              <div style={{ width:20, height:20, border:`2px solid rgba(200,146,60,0.3)`, borderTopColor:C.gold, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-              Loading…
+            <div style={{ ...card, padding:24, display:'flex', flexDirection:'column', gap:14 }}>
+              <div><label style={lbl}>Series title</label><input value={colTitle} onChange={e=>setColTitle(e.target.value)} placeholder="e.g. The Great Blue Heron" style={{ ...field, fontSize:16, fontFamily:'var(--font-jost)', fontWeight:300 }}/></div>
+              <div><label style={lbl}>Description (optional)</label><textarea value={colDesc} onChange={e=>setColDesc(e.target.value)} rows={2} placeholder="A few words about this shoot…" style={{ ...field, resize:'vertical' }}/></div>
             </div>
-          )}
 
-          {!dataLoading && <>
-
-          {/* DASHBOARD */}
-          {screen === 'dashboard' && (
-            <div style={{ display:'flex', flexDirection:'column', gap:20, animation:'nmfade .5s ease both' }}>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:14 }}>
-                {[
-                  { label:'Upload Photograph', sub:'Add to Media Library', action:() => fileRef.current?.click(), icon:<><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></> },
-                  { label:'Edit Homepage',     sub:'Hero, sections, footer', action:() => setScreen('homepage'), icon:<><path d="M4 11 12 4l8 7M6 10v9h12v-9"/></> },
-                  { label:'Create Collection', sub:'Group & order images',   action:() => setScreen('portfolio'), icon:<><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M3 9h18"/></> },
-                  { label:'Add Print',         sub:'New Print Room listing', action:() => setScreen('print'), icon:<><rect x="4" y="4" width="16" height="16" rx="1.6"/><rect x="8" y="8" width="8" height="8" rx="1"/></> },
-                ].map(({ label, sub, action, icon }) => (
-                  <button key={label} onClick={action} className="nm-h" style={{ display:'flex', alignItems:'center', gap:14, padding:18, borderRadius:16, background:'rgba(20,18,16,0.6)', backdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.07)', cursor:'pointer', fontFamily:'var(--font-manrope)', color:C.text, textAlign:'left' }}>
-                    <span style={{ display:'flex', alignItems:'center', justifyContent:'center', width:40, height:40, flexShrink:0, borderRadius:12, background:'rgba(200,146,60,0.14)', color:C.goldL }}>
-                      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">{icon}</svg>
-                    </span>
-                    <span><span style={{ display:'block', fontSize:14, fontWeight:600 }}>{label}</span><span style={{ display:'block', fontSize:11.5, color:'rgba(244,241,236,0.45)' }}>{sub}</span></span>
-                  </button>
-                ))}
+            {/* Ordered items with drag */}
+            <div style={{ ...card, padding:24 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, flexWrap:'wrap', gap:10 }}>
+                <div>
+                  <div style={{ fontFamily:'var(--font-jost)', fontSize:18 }}>Photos in this series</div>
+                  <div style={{ fontSize:12, color:MT, marginTop:3 }}>Drag to reorder. The first photo becomes the cover.</div>
+                </div>
+                <button onClick={()=>setColAddOpen(true)} style={ghostBtn}>+ Add photos</button>
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,2fr)) minmax(240px,1fr)', gap:18 }}>
-                <section style={card}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-                    <h3 style={h3s}>Recent Uploads</h3>
-                    <button onClick={() => setScreen('media')} style={{ background:'none', border:'none', color:C.gold, fontSize:12, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>View all →</button>
-                  </div>
-                  {media.length === 0 ? (
-                    <div style={{ padding:'32px', textAlign:'center', color:C.muted, fontSize:13 }}>No photos yet — click Upload Photograph to add your first image.</div>
-                  ) : (
-                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))', gap:12 }}>
-                      {media.slice(0,4).map(p => (
-                        <button key={p.id} onClick={() => openEditor(p)} className="nm-card" style={{ position:'relative', border:'1px solid rgba(255,255,255,0.08)', borderRadius:13, overflow:'hidden', cursor:'pointer', aspectRatio:'1', padding:0, color:C.text, background:'#15120e' }}>
-                          {p.thumbUrl ? <img src={p.thumbUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} /> : <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>}
-                          <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg,transparent 45%,rgba(0,0,0,0.78))' }} />
-                          <div style={{ position:'absolute', left:8, right:8, bottom:7, textAlign:'left' }}>
-                            <div style={{ fontSize:11, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.title}</div>
-                            <div style={{ fontSize:9.5, color:'rgba(244,241,236,0.55)' }}>{p.status}</div>
-                          </div>
-                          <span style={{ position:'absolute', top:8, left:8, fontSize:9, padding:'3px 7px', borderRadius:6, background:'rgba(11,10,9,0.7)', color:p.status==='published'?'#5fb87a':'#c8923c', border:`1px solid ${p.status==='published'?'#5fb87a44':'#c8923c44'}` }}>{p.status}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </section>
-                <section style={card}>
-                  <h3 style={{ ...h3s, marginBottom:14 }}>Library</h3>
-                  <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-                    {[['#5fb87a','Published',published],['#c8923c','Drafts',drafts],['#8aa0c8','Print Enabled',printCount]].map(([dot,label,count]) => (
-                      <div key={label as string} style={{ display:'flex', alignItems:'center', gap:13, padding:13, borderRadius:13, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
-                        <span style={{ width:9, height:9, borderRadius:'50%', background:dot as string, flexShrink:0 }} />
-                        <span style={{ flex:1, fontSize:13 }}>{label}</span>
-                        <span style={{ fontFamily:'var(--font-jost)', fontSize:23 }}>{count}</span>
+              {colItems.length===0
+                ? <div style={{ fontSize:13, color:MT, padding:'20px 0' }}>No photos yet. Click &quot;Add photos&quot; to choose from your library.</div>
+                : <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:10 }}>
+                    {colItems.map((p,idx)=>(
+                      <div
+                        key={p.id}
+                        draggable
+                        onDragStart={()=>setDragIdx(idx)}
+                        onDragOver={e=>e.preventDefault()}
+                        onDrop={e=>{e.preventDefault(); if(dragIdx!==null&&dragIdx!==idx)moveColItem(dragIdx,idx); setDragIdx(null)}}
+                        style={{ position:'relative', border:`1px solid ${dragIdx===idx?'rgba(200,146,60,0.5)':BR}`, borderRadius:11, overflow:'hidden', background:'#12100e', cursor:'grab', opacity:dragIdx===idx?0.5:1 }}
+                      >
+                        <div style={{ position:'relative', aspectRatio:'4/3' }}>
+                          {p.thumbUrl&&<img src={p.thumbUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>}
+                          <div style={{ position:'absolute', top:6, left:6, width:22, height:22, borderRadius:6, background:'rgba(200,146,60,0.92)', color:'#1a130a', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{idx+1}</div>
+                          <button onClick={()=>setColItems(prev=>prev.filter(x=>x.id!==p.id))} style={{ position:'absolute', top:6, right:6, width:22, height:22, borderRadius:6, background:'rgba(8,7,6,0.8)', border:'none', color:'rgba(224,90,90,0.9)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>×</button>
+                        </div>
+                        <div style={{ padding:'7px 9px', fontSize:11.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.title}</div>
                       </div>
                     ))}
                   </div>
-                </section>
-              </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:18 }}>
-                <section style={card}>
-                  <h3 style={{ ...h3s, marginBottom:14 }}>Current Homepage Hero</h3>
-                  <div style={{ position:'relative', borderRadius:13, overflow:'hidden', aspectRatio:'16/10', border:'1px solid rgba(255,255,255,0.08)' }}>
-                    <div style={{ position:'absolute', inset:0, background:"url('/hero-clean.jpg') center 30%/cover" }} />
-                    <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg,transparent 40%,rgba(0,0,0,0.72))' }} />
-                    <div style={{ position:'absolute', left:13, bottom:11 }}>
-                      <div style={{ fontFamily:'var(--font-jost)', fontSize:15 }}>{hpTitle.slice(0,30)}</div>
-                      <div style={{ fontSize:11, color:'rgba(244,241,236,0.6)' }}>{hpEyebrow}</div>
-                    </div>
-                  </div>
-                  <button onClick={() => setScreen('homepage')} className="nm-h" style={{ ...ghostBtn, marginTop:13, width:'100%' }}>Edit Hero</button>
-                </section>
-                <section style={card}>
-                  <h3 style={{ ...h3s, marginBottom:14 }}>Featured Print</h3>
-                  <div style={{ position:'relative', borderRadius:13, overflow:'hidden', aspectRatio:'16/10', border:'1px solid rgba(255,255,255,0.08)' }}>
-                    <div style={{ position:'absolute', inset:0, background:"url('/featured.jpg') center/cover" }} />
-                    <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg,transparent 40%,rgba(0,0,0,0.72))' }} />
-                    <div style={{ position:'absolute', left:13, bottom:11 }}>
-                      <div style={{ fontFamily:'var(--font-jost)', fontSize:15 }}>{prints.find(p=>p.featured)?.title || 'No featured print'}</div>
-                      <div style={{ fontSize:11, color:C.gold }}>From ${prints.find(p=>p.featured)?.fromPrice || '--'}</div>
-                    </div>
-                  </div>
-                  <button onClick={() => setScreen('print')} className="nm-h" style={{ ...ghostBtn, marginTop:13, width:'100%' }}>Edit Print Room</button>
-                </section>
-                <section style={card}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-                    <h3 style={h3s}>Recent Messages</h3>
-                    <button onClick={() => setScreen('messages')} style={{ background:'none', border:'none', color:C.gold, fontSize:12, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>Inbox →</button>
-                  </div>
-                  {messages.length === 0 ? (
-                    <div style={{ padding:'20px', textAlign:'center', fontSize:13, color:C.muted }}>No messages yet</div>
-                  ) : messages.slice(0,3).map(m => (
-                    <button key={m.id} onClick={() => { setScreen('messages'); openMsgItem(m) }} className="nm-h" style={{ display:'flex', gap:11, alignItems:'center', padding:10, borderRadius:12, background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', cursor:'pointer', textAlign:'left', width:'100%', color:C.text, marginBottom:6 }}>
-                      <span style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', background:'linear-gradient(135deg,#2a2620,#15120e)', border:'1px solid rgba(255,255,255,0.1)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:C.gold }}>{m.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</span>
-                      <span style={{ minWidth:0, flex:1 }}><span style={{ display:'block', fontSize:12.5, fontWeight:600 }}>{m.name}</span><span style={{ display:'block', fontSize:11, color:C.muted, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{m.body.slice(0,50)}</span></span>
-                      {m.status === 'New' && <span style={{ width:7, height:7, borderRadius:'50%', background:C.gold, flexShrink:0 }} />}
-                    </button>
-                  ))}
-                </section>
-              </div>
+              }
             </div>
-          )}
 
-          {/* MEDIA LIBRARY */}
-          {screen === 'media' && (
-            <div style={{ display:'flex', gap:18, alignItems:'flex-start', animation:'nmfade .5s ease both' }}>
-              <aside style={{ flexShrink:0, width:196, borderRadius:18, padding:'16px 12px', background:'rgba(20,18,16,0.6)', backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.07)', position:'sticky', top:22 }}>
-                <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:C.dim, padding:'0 8px 8px' }}>Status</div>
-                {[['all','All'],['drafts','Drafts'],['published','Published'],['featured','Featured'],['print','Print Enabled'],['homepage','Homepage'],['archived','Archived']].map(([key,label]) => (
-                  <button key={key} onClick={() => setFilter(key)} style={railBtn(filter===key)}><span>{label}</span></button>
-                ))}
-                <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:C.dim, padding:'12px 8px 8px' }}>Orientation</div>
-                {[['landscape','Landscape'],['portrait','Portrait'],['pano','Panoramic']].map(([key,label]) => (
-                  <button key={key} onClick={() => setFilter(key)} style={railBtn(filter===key)}><span>{label}</span></button>
-                ))}
-              </aside>
-              <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:16, background:'rgba(20,18,16,0.6)', backdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.07)' }}>
-                  <div style={{ fontSize:13, color:C.muted }}>{filteredMedia().length} photographs</div>
-                  <div style={{ flex:1 }} />
-                  <div style={{ display:'flex', gap:2, padding:3, borderRadius:11, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.07)' }}>
-                    {(['newest','oldest'] as const).map(s => (
-                      <button key={s} onClick={() => setSort(s)} style={{ padding:'6px 14px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'var(--font-manrope)', fontSize:12, background:sort===s?'rgba(200,146,60,0.9)':'transparent', color:sort===s?'#1a130a':'rgba(244,241,236,0.65)', fontWeight:sort===s?600:400 }}>{s.charAt(0).toUpperCase()+s.slice(1)}</button>
-                    ))}
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+              <button onClick={()=>publishCollection(false)} style={ghostBtn} disabled={loading}>Save as draft</button>
+              <button onClick={()=>publishCollection(true)} style={{ ...primaryBtn, flex:1, minWidth:180 }} disabled={loading}>Publish series to portfolio →</button>
+            </div>
+            <button onClick={deleteCollection} disabled={loading} style={{ padding:'9px', borderRadius:10, border:'1px solid rgba(224,90,90,0.25)', background:'rgba(224,90,90,0.04)', color:'rgba(224,90,90,0.7)', fontSize:12.5, cursor:'pointer', fontFamily:'var(--font-manrope)', alignSelf:'flex-start', paddingLeft:20, paddingRight:20 }}>Delete series</button>
+
+            {/* Add-photos modal */}
+            {colAddOpen && (
+              <div onClick={()=>setColAddOpen(false)} style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(5,4,3,0.86)', backdropFilter:'blur(12px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+                <div onClick={e=>e.stopPropagation()} style={{ width:'100%', maxWidth:880, maxHeight:'86vh', display:'flex', flexDirection:'column', borderRadius:18, background:'#0d0b0a', border:`1px solid ${BR}`, overflow:'hidden' }}>
+                  <div style={{ padding:'18px 24px', borderBottom:`1px solid ${BR}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                    <div style={{ fontFamily:'var(--font-jost)', fontSize:18 }}>Add photos to series</div>
+                    <button onClick={()=>setColAddOpen(false)} style={{ width:34, height:34, borderRadius:'50%', background:'rgba(255,255,255,0.06)', border:`1px solid ${BR}`, color:T, cursor:'pointer' }}>✕</button>
                   </div>
-                </div>
-                {filteredMedia().length === 0 ? (
-                  <div style={{ ...card, textAlign:'center', padding:'60px 20px' }}>
-                    <div style={{ fontSize:13, color:C.muted, marginBottom:16 }}>{media.length === 0 ? 'Your library is empty.' : 'No photos match this filter.'}</div>
-                    {media.length === 0 && <button onClick={() => fileRef.current?.click()} style={saveBtn}>Upload your first photo</button>}
-                  </div>
-                ) : (
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:14 }}>
-                    {filteredMedia().map(p => {
-                      const sel = !!selected[p.id]
-                      return (
-                        <div key={p.id} className="nm-card" style={{ borderRadius:15, overflow:'hidden', background:'rgba(20,18,16,0.6)', backdropFilter:'blur(18px)', border:`1px solid ${sel?'rgba(200,146,60,0.55)':'rgba(255,255,255,0.08)'}`, boxShadow:sel?'0 0 0 1px rgba(200,146,60,0.4),0 14px 34px rgba(0,0,0,0.4)':'0 8px 24px rgba(0,0,0,0.3)' }}>
-                          <div style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden' }}>
-                            {p.thumbUrl
-                              ? <img src={p.thumbUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} />
-                              : <div style={{ position:'absolute', inset:0, background:'rgba(255,255,255,0.04)', display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>
-                            }
-                            <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg,rgba(0,0,0,0.12) 0%,transparent 30%,transparent 60%,rgba(0,0,0,0.5))' }} />
-                            <button onClick={() => setSelected(prev => { const n={...prev}; if(n[p.id]) delete n[p.id]; else n[p.id]=true; return n })} style={{ position:'absolute', top:9, left:9, width:23, height:23, borderRadius:7, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', background:sel?'#e3b463':'rgba(11,10,9,0.55)', border:`1px solid ${sel?'#e3b463':'rgba(255,255,255,0.35)'}`, backdropFilter:'blur(6px)' }}>
-                              {sel && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a130a" strokeWidth="3.2"><path d="m5 12 5 5L20 6"/></svg>}
-                            </button>
-                            {p.featured && <span style={{ position:'absolute', top:9, right:9, width:23, height:23, borderRadius:7, background:'rgba(11,10,9,0.65)', backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', color:C.goldL, border:'1px solid rgba(200,146,60,0.4)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.8 5.9 20.4l1.4-6.8L2.2 9l6.9-.7z"/></svg></span>}
-                            <span style={{ position:'absolute', bottom:9, left:9, fontSize:9, letterSpacing:'0.08em', textTransform:'uppercase', padding:'3px 7px', borderRadius:6, background:'rgba(11,10,9,0.6)', backdropFilter:'blur(6px)', color:'rgba(244,241,236,0.85)', border:'1px solid rgba(255,255,255,0.14)' }}>{p.orientation||'—'}</span>
-                          </div>
-                          <div style={{ padding:'11px 12px', display:'flex', alignItems:'center', gap:9 }}>
-                            <span style={{ width:8, height:8, borderRadius:'50%', flexShrink:0, background:p.status==='published'?'#5fb87a':p.status==='draft'?'#c8923c':'#8aa0c8' }} />
-                            <div style={{ minWidth:0, flex:1 }}>
-                              <div style={{ fontSize:12.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.title}</div>
-                              <div style={{ fontSize:10.5, color:'rgba(244,241,236,0.45)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.location||p.status}</div>
+                  <div style={{ padding:24, overflowY:'auto' }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:10 }}>
+                      {photos.filter(p=>p.thumbUrl).map(p=>{
+                        const inSet = colItems.some(x=>x.id===p.id)
+                        return (
+                          <button key={p.id} onClick={()=>{ if(inSet)setColItems(prev=>prev.filter(x=>x.id!==p.id)); else setColItems(prev=>[...prev,{id:p.id,title:p.title,thumbUrl:p.thumbUrl,status:p.status}]) }} style={{ padding:0, border:`2px solid ${inSet?G:'transparent'}`, borderRadius:10, overflow:'hidden', cursor:'pointer', background:'#12100e', position:'relative', textAlign:'left' }}>
+                            <div style={{ position:'relative', aspectRatio:'4/3' }}>
+                              <img src={p.thumbUrl!} alt="" loading="lazy" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>
+                              {inSet && <div style={{ position:'absolute', inset:0, background:'rgba(200,146,60,0.25)', display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={GL} strokeWidth="2.5"><path d="m5 12 5 5L20 6"/></svg></div>}
                             </div>
-                            <button onClick={() => openEditor(p)} className="nm-h" style={{ flexShrink:0, width:28, height:28, borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)', color:C.gold, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })}
+                            <div style={{ padding:'7px 9px', fontSize:11.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.title}</div>
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                )}
+                  <div style={{ padding:'14px 24px', borderTop:`1px solid ${BR}`, display:'flex', justifyContent:'flex-end' }}>
+                    <button onClick={()=>setColAddOpen(false)} style={primaryBtn}>Done ({colItems.length} selected)</button>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {/* IMAGE EDITOR */}
-          {screen === 'editor' && editItem && (
-            <div style={{ display:'flex', flexDirection:'column', gap:16, animation:'nmfade .5s ease both' }}>
-              <button onClick={() => setScreen('media')} className="nm-h" style={{ display:'flex', alignItems:'center', gap:7, alignSelf:'flex-start', background:'none', border:'none', color:C.muted, fontSize:13, cursor:'pointer', fontFamily:'var(--font-manrope)', padding:'6px 10px', borderRadius:8 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 18 9 12l6-6"/></svg>
-                Back to Media Library
-              </button>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))', gap:18, alignItems:'start' }}>
-                <section style={card}>
-                  <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
-                    {(['desktop','tablet','mobile','fullscreen'] as const).map(d => (
-                      <button key={d} onClick={() => setDevice(d)} style={devBtn(device===d)}>{DEV_LABEL[d]}</button>
-                    ))}
-                  </div>
-                  <div style={{ fontSize:11.5, color:'rgba(244,241,236,0.5)', marginBottom:14, lineHeight:1.55 }}>Each tab is a place this photo can appear. Pick one, then frame it for that context. Your original file is never changed.</div>
-                  <div style={{ position:'relative', background:'repeating-conic-gradient(#141210 0% 25%, #100e0c 0% 50%) 0/22px 22px', borderRadius:14, padding:26, display:'flex', alignItems:'center', justifyContent:'center', minHeight:300 }}>
-                    <div style={{ position:'relative', borderRadius:6, overflow:'hidden', boxShadow:'0 18px 50px rgba(0,0,0,0.55)', aspectRatio:DEV_ASPECT[device], ...(device==='mobile'?{height:'280px'}:{width:'min(100%,480px)'}) }}>
-                      {editItem.thumbUrl
-                        ? <img src={editItem.thumbUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', objectPosition:`${posX}% ${posY}%`, transform:`scale(${zoom/100})` }} />
-                        : <div style={{ position:'absolute', inset:0, background:'rgba(255,255,255,0.06)', display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.3)', fontSize:12 }}>No preview</div>}
-                      <div style={{ position:'absolute', inset:0, pointerEvents:'none', backgroundImage:'linear-gradient(rgba(255,255,255,0.22) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.22) 1px,transparent 1px)', backgroundSize:'33.33% 33.33%' }} />
-                      <div style={{ position:'absolute', left:`${posX}%`, top:`${posY}%`, transform:'translate(-50%,-50%)', width:18, height:18, borderRadius:'50%', border:'2px solid #e3b463', boxShadow:'0 0 0 4px rgba(200,146,60,0.25)', pointerEvents:'none' }} />
+        {tab==='content' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:22 }}>
+            <div style={{ ...card, padding:28 }}>
+              <div style={{ fontFamily:'var(--font-jost)', fontSize:20, marginBottom:4 }}>Site Images</div>
+              <div style={{ fontSize:13, color:MT, marginBottom:22 }}>The three photos used across your site. Upload a new one or choose from your library.</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:16 }}>
+                {IMG_SLOTS.map(({key,label,sub,url})=>(
+                  <div key={key} style={{ border:`1px solid ${BR}`, borderRadius:13, overflow:'hidden', background:'#100e0c' }}>
+                    <div style={{ position:'relative', aspectRatio:'4/3' }}>
+                      {url?<img src={url} alt={label} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>:<div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:7 }}><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.4"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg><span style={{ fontSize:11, color:'rgba(255,255,255,0.2)' }}>Not set</span></div>}
                     </div>
-                    <span style={{ position:'absolute', left:14, top:12, fontSize:10.5, letterSpacing:'0.18em', textTransform:'uppercase', color:'rgba(244,241,236,0.5)' }}>{DEV_LABEL[device]} framing</span>
-                  </div>
-                  <div style={{ marginTop:16, display:'flex', flexDirection:'column', gap:14 }}>
-                    <div><div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:8 }}><span style={{ color:C.muted }}>Zoom</span><span style={{ color:C.gold }}>{zoom}%</span></div><input type="range" min={100} max={240} value={zoom} onChange={e=>setZoom(+e.target.value)} style={{ width:'100%' }}/></div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-                      <div><div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>Horizontal</div><input type="range" min={0} max={100} value={posX} onChange={e=>setPosX(+e.target.value)} style={{ width:'100%' }}/></div>
-                      <div><div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>Vertical</div><input type="range" min={0} max={100} value={posY} onChange={e=>setPosY(+e.target.value)} style={{ width:'100%' }}/></div>
-                    </div>
-                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-                      <span style={{ fontSize:12, color:'rgba(244,241,236,0.55)' }}>Aspect</span>
-                      {['Free','16:9','3:2','4:5','1:1'].map(a => <span key={a} style={{ padding:'6px 11px', borderRadius:8, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', fontSize:11.5, color:'rgba(244,241,236,0.8)', cursor:'pointer' }}>{a}</span>)}
-                      <div style={{ flex:1 }}/>
-                      <button onClick={() => { setZoom(118); setPosX(50); setPosY(42) }} className="nm-h" style={ghostBtn}>↺ Reset</button>
-                    </div>
-                    <div style={{ fontSize:11, color:'rgba(244,241,236,0.42)', display:'flex', alignItems:'center', gap:7, paddingTop:11, borderTop:'1px solid rgba(255,255,255,0.06)' }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c8923c" strokeWidth="1.6"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3.5"/></svg>
-                      Master stays untouched · coordinates saved for {DEV_LABEL[device]} only
+                    <div style={{ padding:'11px 13px' }}>
+                      <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{label}</div>
+                      <div style={{ fontSize:11, color:MT, marginBottom:10 }}>{sub}</div>
+                      <button onClick={()=>setImgSlot(key)} style={{ width:'100%', padding:'7px', borderRadius:8, border:`1px solid ${BR}`, background:'rgba(255,255,255,0.03)', color:MT, fontSize:12.5, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>{url?'↕ Change image':'+ Set image'}</button>
                     </div>
                   </div>
-                </section>
-                <section style={card}>
-                  <div style={{ display:'flex', alignItems:'center', gap:12, paddingBottom:16, borderBottom:'1px solid rgba(255,255,255,0.07)', marginBottom:16 }}>
-                    {editItem.thumbUrl && <div style={{ width:52, height:52, borderRadius:10, overflow:'hidden', flexShrink:0, border:'1px solid rgba(255,255,255,0.1)', background:`url('${editItem.thumbUrl}') center/cover` }} />}
-                    <div style={{ minWidth:0 }}><div style={{ fontFamily:'var(--font-jost)', fontSize:17 }}>{edFields.title}</div><div style={{ fontSize:11, color:'rgba(244,241,236,0.45)' }}>sRGB · master preserved</div></div>
-                  </div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:13, maxHeight:460, overflowY:'auto', paddingRight:4 }}>
-                    {([['Public title','title'],['Caption','caption'],['Alt text','alt']] as [string,keyof EditorFields][]).map(([label,key]) => (
-                      <div key={key}><label style={fLabel}>{label}</label><input value={edFields[key] as string} onChange={e => setEdFields(p=>({...p,[key]:e.target.value}))} style={inp} /></div>
-                    ))}
-                    <div><label style={fLabel}>Description / story</label><textarea value={edFields.description} onChange={e => setEdFields(p=>({...p,description:e.target.value}))} rows={3} style={{ ...inp, resize:'vertical' }} /></div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:11 }}>
-                      <div><label style={fLabel}>Capture date</label><input value={edFields.captureDate} onChange={e => setEdFields(p=>({...p,captureDate:e.target.value}))} style={inp} /></div>
-                      <div><label style={fLabel}>Location</label><input value={edFields.location} onChange={e => setEdFields(p=>({...p,location:e.target.value}))} style={inp} /></div>
-                    </div>
-                    <div><label style={fLabel}>Camera & lens</label><input value={edFields.camera} onChange={e => setEdFields(p=>({...p,camera:e.target.value}))} style={inp} /></div>
-                    <div style={{ display:'flex', flexDirection:'column', borderTop:'1px solid rgba(255,255,255,0.06)', paddingTop:13 }}>
-                      <TRow label="Published" on={edFields.status==='published'} onClick={()=>setEdFields(p=>({...p,status:p.status==='published'?'draft':'published'}))} />
-                      <TRow label="Featured" on={edFields.featured} onClick={()=>setEdFields(p=>({...p,featured:!p.featured}))} />
-                      <TRow label="Homepage hero" on={edFields.homepage} onClick={()=>setEdFields(p=>({...p,homepage:!p.homepage}))} />
-                      <TRow label="Available as print" on={edFields.printEnabled} onClick={()=>setEdFields(p=>({...p,printEnabled:!p.printEnabled}))} />
-                    </div>
-                  </div>
-                  <div style={{ display:'flex', gap:10, paddingTop:16, marginTop:16, borderTop:'1px solid rgba(255,255,255,0.07)' }}>
-                    <button onClick={()=>saveEditor('draft')} className="nm-h" style={{ ...ghostBtn, flex:1 }} disabled={loading}>Save Draft</button>
-                    <button onClick={()=>{ const url=editItem.thumbUrl||''; if(url) window.open(url,'_blank') }} className="nm-h" style={{ ...ghostBtn, flex:1 }}>Preview</button>
-                    <button onClick={()=>saveEditor('published')} className="nm-h" disabled={loading} style={{ flex:1.2, padding:11, borderRadius:11, border:'1px solid rgba(200,146,60,0.5)', background:'linear-gradient(180deg,#c8923c,#b07c2e)', color:'#1a130a', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>Publish</button>
-                  </div>
-                </section>
-              </div>
-            </div>
-          )}
-
-          {/* MESSAGES */}
-          {screen === 'messages' && (
-            <div style={{ display:'flex', gap:18, alignItems:'flex-start', animation:'nmfade .5s ease both', flexWrap:'wrap' }}>
-              <aside style={{ flexShrink:0, width:180, borderRadius:18, padding:'16px 12px', background:'rgba(20,18,16,0.6)', backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.07)' }}>
-                <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:C.dim, padding:'0 8px 8px' }}>Inbox</div>
-                {['New','Read','Replied','Archived'].map(f => (
-                  <button key={f} onClick={()=>{ setMsgFolder(f); setOpenMsg(null) }} style={railBtn(msgFolder===f)}>
-                    <span>{f}</span><span style={{ fontSize:11, color:'rgba(244,241,236,0.45)' }}>{messages.filter(m=>m.status===f).length}</span>
-                  </button>
                 ))}
-              </aside>
-              <div style={{ flex:'1 1 280px', minWidth:240, ...card }}>
-                <h3 style={{ ...h3s, marginBottom:14 }}>{msgFolder}</h3>
-                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                  {folderMsgs.length === 0 ? (
-                    <div style={{ padding:34, textAlign:'center', fontSize:13, color:C.muted }}>No messages in this folder.</div>
-                  ) : folderMsgs.map(m => (
-                    <button key={m.id} onClick={()=>openMsgItem(m)} className="nm-h" style={{ display:'flex', gap:13, alignItems:'center', padding:14, borderRadius:13, cursor:'pointer', width:'100%', background:openMsg?.id===m.id?'rgba(200,146,60,0.12)':'rgba(255,255,255,0.025)', border:`1px solid ${openMsg?.id===m.id?'rgba(200,146,60,0.34)':'rgba(255,255,255,0.06)'}`, color:C.text }}>
-                      <span style={{ width:38, height:38, flexShrink:0, borderRadius:'50%', background:'linear-gradient(135deg,#2a2620,#15120e)', border:'1px solid rgba(255,255,255,0.1)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, color:C.gold }}>{m.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</span>
-                      <span style={{ minWidth:0, flex:1, textAlign:'left' }}><span style={{ display:'block', fontSize:13, fontWeight:600, color:C.text }}>{m.name}</span><span style={{ display:'block', fontSize:12, color:C.muted, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{m.body.slice(0,60)}</span></span>
-                      <span style={{ fontSize:11, color:'rgba(244,241,236,0.4)', flexShrink:0 }}>{new Date(m.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+
+            <div style={{ ...card, padding:28 }}>
+              <div style={{ fontFamily:'var(--font-jost)', fontSize:20, marginBottom:4 }}>Homepage Text</div>
+              <div style={{ fontSize:13, color:MT, marginBottom:20 }}>The words on your hero section.</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:13 }}>
+                <div><label style={lbl}>Eyebrow — small gold text above headline</label><input value={hpEyebrow} onChange={e=>setHpEyebrow(e.target.value)} style={field}/></div>
+                <div><label style={lbl}>Headline</label><input value={hpTitle} onChange={e=>setHpTitle(e.target.value)} style={field}/></div>
+                <div><label style={lbl}>Supporting text</label><textarea value={hpSub} onChange={e=>setHpSub(e.target.value)} rows={2} style={{ ...field, resize:'vertical' }}/></div>
+              </div>
+            </div>
+
+            <div style={{ ...card, padding:28 }}>
+              <div style={{ fontFamily:'var(--font-jost)', fontSize:20, marginBottom:18 }}>About & Story</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:13 }}>
+                <div><label style={lbl}>Bio — shown on Home and About pages</label><textarea value={abBio} onChange={e=>setAbBio(e.target.value)} rows={3} style={{ ...field, resize:'vertical' }}/></div>
+                <div><label style={lbl}>Story title</label><input value={storyTitle} onChange={e=>setStoryTitle(e.target.value)} style={field}/></div>
+                <div><label style={lbl}>Story — blank line between paragraphs</label><textarea value={story} onChange={e=>setStory(e.target.value)} rows={7} style={{ ...field, resize:'vertical', lineHeight:1.7 }}/></div>
+              </div>
+            </div>
+
+            <div style={{ ...card, padding:28 }}>
+              <div style={{ fontFamily:'var(--font-jost)', fontSize:20, marginBottom:6 }}>Portfolio Categories</div>
+              <div style={{ fontSize:13, color:MT, marginBottom:16 }}>Filter chips shown on the Portfolio page.</div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+                {cats.map((c,i)=>(<span key={i} style={{ display:'flex', alignItems:'center', gap:7, padding:'6px 12px', borderRadius:8, background:'rgba(200,146,60,0.1)', border:'1px solid rgba(200,146,60,0.28)', color:GL, fontSize:13 }}>{c}<button onClick={()=>setCats(prev=>prev.filter((_,j)=>j!==i))} style={{ background:'none', border:'none', color:MT, cursor:'pointer', fontSize:15, lineHeight:1, padding:0 }}>×</button></span>))}
+              </div>
+              <div style={{ display:'flex', gap:10 }}>
+                <input value={catDraft} onChange={e=>setCatDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&catDraft.trim()){setCats(p=>[...p,catDraft.trim()]);setCatDraft('')}}} placeholder="Add category…" style={{ ...field, maxWidth:240 }}/>
+                <button onClick={()=>{if(catDraft.trim()){setCats(p=>[...p,catDraft.trim()]);setCatDraft('')}}} style={ghostBtn}>Add</button>
+              </div>
+            </div>
+
+            <button onClick={saveContent} disabled={loading} style={{ ...primaryBtn, alignSelf:'flex-start' }}>{loading?'Saving…':'Save Content'}</button>
+
+            <div style={{ ...card, padding:28 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+                <div style={{ fontFamily:'var(--font-jost)', fontSize:20 }}>Messages</div>
+                <span style={{ fontSize:13, color:MT }}>{msgs.length} total{newMsgs>0?` · ${newMsgs} unread`:''}</span>
+              </div>
+              {msgs.length===0?<div style={{ fontSize:13, color:MT }}>No messages yet.</div>:
+                <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:380, overflowY:'auto' }}>
+                  {msgs.map(m=>(
+                    <button key={m.id} onClick={()=>openMsgItem(m)} style={{ display:'flex', gap:12, alignItems:'center', padding:'13px 15px', borderRadius:11, cursor:'pointer', width:'100%', background:openMsg?.id===m.id?'rgba(200,146,60,0.07)':'rgba(255,255,255,0.02)', border:`1px solid ${openMsg?.id===m.id?'rgba(200,146,60,0.22)':BR}`, color:T, fontFamily:'var(--font-manrope)', textAlign:'left' }}>
+                      <span style={{ width:34, height:34, flexShrink:0, borderRadius:'50%', background:'rgba(200,146,60,0.14)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11.5, fontWeight:700, color:G }}>{m.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</span>
+                      <span style={{ flex:1, minWidth:0 }}><span style={{ display:'block', fontSize:13.5, fontWeight:600 }}>{m.name}</span><span style={{ display:'block', fontSize:12, color:MT, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{m.body.slice(0,70)}</span></span>
+                      {m.status==='New'&&<span style={{ width:7, height:7, borderRadius:'50%', background:G, flexShrink:0 }}/>}
                     </button>
                   ))}
-                </div>
-              </div>
-              {openMsg && (
-                <div style={{ flex:'1 1 320px', minWidth:280, ...card, display:'flex', flexDirection:'column', gap:16, animation:'nmfade .3s ease both' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:13 }}>
-                    <span style={{ width:44, height:44, flexShrink:0, borderRadius:'50%', background:'linear-gradient(135deg,#2a2620,#15120e)', border:'1px solid rgba(255,255,255,0.1)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, color:C.gold }}>{openMsg.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</span>
-                    <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:15, fontWeight:600 }}>{openMsg.name}</div><a href={`mailto:${openMsg.email}`} className="nm-h" style={{ fontSize:12.5, color:C.goldL }}>{openMsg.email}</a></div>
-                    <span style={{ fontSize:11, color:'rgba(244,241,236,0.45)' }}>{openMsg.status}</span>
-                  </div>
-                  <div style={{ fontSize:14, lineHeight:1.7, color:'rgba(244,241,236,0.82)', padding:16, borderRadius:13, background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)' }}>{openMsg.body}</div>
-                  <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-                    <button onClick={()=>{ window.open(`mailto:${openMsg.email}`); setMsgStatus(openMsg.id,'Replied') }} className="nm-h" style={saveBtn}>Reply by email</button>
-                    <button onClick={()=>setMsgStatus(openMsg.id,'Archived')} className="nm-h" style={ghostBtn}>Archive</button>
-                    <button onClick={()=>setOpenMsg(null)} className="nm-h" style={ghostBtn}>Close</button>
-                  </div>
-                </div>
-              )}
+                </div>}
+              {openMsg && <div style={{ marginTop:16, padding:20, borderRadius:13, background:'rgba(200,146,60,0.04)', border:'1px solid rgba(200,146,60,0.15)' }}>
+                <div style={{ fontWeight:600, marginBottom:3 }}>{openMsg.name}</div>
+                <a href={`mailto:${openMsg.email}`} style={{ fontSize:12.5, color:GL, display:'block', marginBottom:14 }}>{openMsg.email}</a>
+                <div style={{ fontSize:14, lineHeight:1.75, color:'rgba(244,241,236,0.8)', marginBottom:16, whiteSpace:'pre-wrap' }}>{openMsg.body}</div>
+                <div style={{ display:'flex', gap:10 }}><a href={`mailto:${openMsg.email}`} style={{ ...primaryBtn, textDecoration:'none' }}>Reply by email</a><button onClick={()=>setOpenMsg(null)} style={ghostBtn}>Close</button></div>
+              </div>}
             </div>
-          )}
 
-          {/* HOMEPAGE EDITOR */}
-          {screen === 'homepage' && (
-            <div style={{ ...card, animation:'nmfade .5s ease both', display:'flex', flexDirection:'column', gap:15 }}>
-              <h3 style={h3s}>Hero Section</h3>
-              <div style={{ position:'relative', borderRadius:13, overflow:'hidden', aspectRatio:'21/9', border:'1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ position:'absolute', inset:0, background:"url('/hero-clean.jpg') center 30%/cover" }} />
-                <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg,rgba(7,6,5,0.9),transparent 72%)' }} />
-                <div style={{ position:'absolute', left:20, bottom:18 }}>
-                  <div style={{ fontSize:11, letterSpacing:'0.3em', color:C.gold }}>{hpEyebrow}</div>
-                  <div style={{ fontFamily:'var(--font-jost)', fontWeight:200, fontSize:'clamp(18px,2.2vw,28px)', marginTop:7 }}>{hpTitle}</div>
-                </div>
+            <div style={{ ...card, padding:28 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                <div style={{ fontFamily:'var(--font-jost)', fontSize:20 }}>Print Shop</div>
+                <button onClick={()=>setPrints(p=>[...p,{id:Date.now(),title:'New Print',location:'',fromPrice:295,featured:false,published:false,externalUrl:null,mediaId:null}])} style={ghostBtn}>+ Add listing</button>
               </div>
-              <div><label style={fLabel}>Eyebrow text</label><input value={hpEyebrow} onChange={e=>setHpEyebrow(e.target.value)} style={inp} /></div>
-              <div><label style={fLabel}>Headline</label><input value={hpTitle} onChange={e=>setHpTitle(e.target.value)} style={inp} /></div>
-              <div><label style={fLabel}>Supporting text</label><textarea value={hpSub} onChange={e=>setHpSub(e.target.value)} rows={3} style={{ ...inp, resize:'vertical' }} /></div>
-              <button onClick={saveHomepage} className="nm-h" style={saveBtn} disabled={loading}>{loading?'Saving…':'Save & Publish'}</button>
-            </div>
-          )}
-
-          {/* ABOUT EDITOR */}
-          {screen === 'about' && (
-            <div style={{ ...card, animation:'nmfade .5s ease both', display:'flex', flexDirection:'column', gap:15 }}>
-              <h3 style={h3s}>About & Story</h3>
-              <div><label style={fLabel}>About Nic — bio shown on Home & About pages</label><textarea value={abBio} onChange={e=>setAbBio(e.target.value)} rows={3} style={{ ...inp, resize:'vertical' }} /></div>
-              <div><label style={fLabel}>Story title</label><input value={abStoryTitle} onChange={e=>setAbStoryTitle(e.target.value)} style={inp} /></div>
-              <div><label style={fLabel}>Story — separate paragraphs with a blank line</label><textarea value={abStory} onChange={e=>setAbStory(e.target.value)} rows={8} style={{ ...inp, resize:'vertical', lineHeight:1.6 }} /></div>
-              <button onClick={saveAbout} className="nm-h" style={saveBtn} disabled={loading}>{loading?'Saving…':'Save & Publish'}</button>
-            </div>
-          )}
-
-          {/* PORTFOLIO / CATEGORIES */}
-          {screen === 'portfolio' && (
-            <div style={{ ...card, animation:'nmfade .5s ease both', display:'flex', flexDirection:'column', gap:16 }}>
-              <h3 style={h3s}>Categories</h3>
-              <p style={{ fontSize:13, color:C.muted, margin:0 }}>These appear as filters on the public Portfolio page.</p>
-              <div style={{ display:'flex', gap:9, flexWrap:'wrap' }}>
-                {categories.map((c,i) => (
-                  <span key={i} style={{ display:'flex', alignItems:'center', gap:9, padding:'8px 12px', borderRadius:10, background:'rgba(200,146,60,0.14)', border:'1px solid rgba(200,146,60,0.34)', color:C.goldL, fontSize:13 }}>
-                    {c}
-                    <button onClick={()=>setCategories(prev=>prev.filter((_,j)=>j!==i))} className="nm-h" style={{ background:'none', border:'none', color:'rgba(244,241,236,0.6)', cursor:'pointer', fontSize:16, lineHeight:1, padding:0 }}>×</button>
-                  </span>
-                ))}
-              </div>
-              <div style={{ display:'flex', gap:10, maxWidth:440 }}>
-                <input value={catDraft} onChange={e=>setCatDraft(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'&&catDraft.trim()){ setCategories(p=>[...p,catDraft.trim()]); setCatDraft('') }}} placeholder="Add a category…" style={inp} />
-                <button onClick={()=>{ if(catDraft.trim()){ setCategories(p=>[...p,catDraft.trim()]); setCatDraft('') }}} className="nm-h" style={saveBtn}>Add</button>
-              </div>
-              <button onClick={saveCats} className="nm-h" style={ghostBtn} disabled={loading}>{loading?'Saving…':'Save Categories'}</button>
-            </div>
-          )}
-
-          {/* SEO */}
-          {screen === 'seo' && (
-            <div style={{ ...card, animation:'nmfade .5s ease both', display:'flex', flexDirection:'column', gap:15 }}>
-              <h3 style={h3s}>Search & Sharing</h3>
-              <p style={{ fontSize:13, color:C.muted, margin:0 }}>Plain-language controls. Sitemaps, Open Graph and structured data are generated automatically on the server.</p>
-              <div><label style={fLabel}>Page title</label><input value={seoTitle} onChange={e=>setSeoTitle(e.target.value)} style={inp} /></div>
-              <div><label style={fLabel}>Meta description</label><textarea value={seoDesc} onChange={e=>setSeoDesc(e.target.value)} rows={3} style={{ ...inp, resize:'vertical' }} /></div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:12 }}>
-                <div><label style={fLabel}>URL slug</label><input value={seoSlug} onChange={e=>setSeoSlug(e.target.value)} style={inp} /></div>
-                <div><label style={fLabel}>Canonical URL</label><input value={seoCanonical} onChange={e=>setSeoCanonical(e.target.value)} style={inp} /></div>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'13px 15px', borderRadius:12, background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)' }}>
-                <div><div style={{ fontSize:13.5, color:C.text }}>Search visibility</div><div style={{ fontSize:11.5, color:C.muted }}>Allow search engines to index this site</div></div>
-                <Toggle on={seoIndex} onClick={()=>setSeoIndex(p=>!p)} />
-              </div>
-              <button onClick={saveSeo} className="nm-h" style={saveBtn} disabled={loading}>{loading?'Saving…':'Save SEO'}</button>
-            </div>
-          )}
-
-          {/* PRINT ROOM */}
-          {screen === 'print' && (
-            <div style={{ display:'flex', flexDirection:'column', gap:16, animation:'nmfade .5s ease both' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-                <h3 style={h3s}>Print Listings</h3>
-                <div style={{ flex:1 }} />
-                <button onClick={()=>setPrints(p=>[...p,{id:Date.now(),title:'New Print',location:'',fromPrice:295,edition:'Open Edition',paper:'Hahnemühle Photo Rag®',featured:false,published:false,thumbUrl:null,externalUrl:null}])} className="nm-h" style={ghostBtn}>+ Add Print</button>
-                <button onClick={savePrints} className="nm-h" style={saveBtn} disabled={loading}>{loading?'Saving…':'Save & Publish'}</button>
-              </div>
-              {prints.length === 0 ? (
-                <div style={{ ...card, textAlign:'center', padding:'60px 20px', color:C.muted, fontSize:13 }}>No prints yet. Click + Add Print to create your first listing.</div>
-              ) : (
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(290px,1fr))', gap:16 }}>
-                  {prints.map(p => (
-                    <div key={p.id} style={{ borderRadius:16, overflow:'hidden', border:'1px solid rgba(255,255,255,0.08)', background:'rgba(20,18,16,0.6)' }}>
-                      <div style={{ position:'relative', aspectRatio:'3/2', background:'#15120e' }}>
-                        {p.thumbUrl ? <img src={p.thumbUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} /> : <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"><rect x="4" y="4" width="16" height="16" rx="1.6"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></div>}
+              <div style={{ fontSize:12.5, color:MT, marginBottom:20, lineHeight:1.6 }}>The print marked <span style={{ color:GL }}>★ Featured</span> shows in the big card on your homepage and at the top of the Print Shop page. Only one should be featured at a time. <span style={{ color:GL }}>● Live on site</span> controls whether it appears at all.</div>
+              {prints.length===0&&<div style={{ fontSize:13, color:MT }}>No listings yet.</div>}
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                {prints.map(p=>(
+                  <div key={p.id} style={{ borderRadius:13, border:`1px solid ${BR}`, background:'rgba(255,255,255,0.02)', overflow:'hidden' }}>
+                    <div style={{ display:'flex', gap:12, alignItems:'center', padding:'12px 16px', borderBottom:`1px solid ${BR}` }}>
+                      {p.thumbUrl?<div style={{ width:60, height:45, flexShrink:0, borderRadius:8, background:`url('${p.thumbUrl}') center/cover`, border:`1px solid ${BR}` }}/>:<div style={{ width:60, height:45, flexShrink:0, borderRadius:8, background:'rgba(255,255,255,0.04)', border:`1px dashed rgba(255,255,255,0.1)`, display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.4"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>}
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:12.5, fontWeight:600, marginBottom:4 }}>{p.thumbUrl?'Photo selected':'No photo selected'}</div>
+                        <button onClick={()=>setPickerOpen(pickerOpen===p.id?null:p.id)} style={{ padding:'5px 12px', borderRadius:7, border:`1px solid ${pickerOpen===p.id?'rgba(200,146,60,0.4)':BR}`, background:pickerOpen===p.id?'rgba(200,146,60,0.1)':'rgba(255,255,255,0.03)', color:pickerOpen===p.id?GL:MT, fontSize:12, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>{p.thumbUrl?'↕ Change photo':'+ Select from library'}</button>
                       </div>
-                      <div style={{ padding:16, display:'flex', flexDirection:'column', gap:9 }}>
-                        <input value={p.title} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,title:e.target.value}:x))} style={{ ...inp, fontFamily:'var(--font-jost)', fontSize:15 }} />
-                        <input value={p.location||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,location:e.target.value}:x))} placeholder="Location" style={inp} />
-                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                          <span style={{ fontSize:12, color:C.muted }}>From $</span>
-                          <input type="number" value={p.fromPrice||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,fromPrice:+e.target.value||0}:x))} style={{ ...inp, width:90 }} />
-                        </div>
-                        <div style={{ display:'flex', gap:18, paddingTop:9, borderTop:'1px solid rgba(255,255,255,0.07)' }}>
-                          <div style={{ display:'flex', alignItems:'center', gap:8 }}><Toggle on={p.featured} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,featured:!x.featured}:x))} /><span style={{ fontSize:12, color:C.muted }}>Featured</span></div>
-                          <div style={{ display:'flex', alignItems:'center', gap:8 }}><Toggle on={p.published} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,published:!x.published}:x))} /><span style={{ fontSize:12, color:C.muted }}>Published</span></div>
-                        </div>
+                      <button onClick={()=>setPrints(prev=>prev.filter(x=>x.id!==p.id))} style={{ background:'none', border:'none', color:'rgba(224,90,90,0.6)', fontSize:12, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>Remove</button>
+                    </div>
+                    {pickerOpen===p.id && <div style={{ padding:12, borderBottom:`1px solid ${BR}`, background:'rgba(0,0,0,0.18)' }}>
+                      <div style={{ fontSize:11, color:MT, marginBottom:8 }}>Select photo:</div>
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(80px,1fr))', gap:6, maxHeight:200, overflowY:'auto' }}>
+                        {photos.filter(ph=>ph.thumbUrl).map(ph=>(
+                          <button key={ph.id} onClick={()=>{setPrints(prev=>prev.map(x=>x.id===p.id?{...x,thumbUrl:ph.thumbUrl,mediaId:ph.id}:x));setPickerOpen(null)}} style={{ padding:0, border:`2px solid ${p.mediaId===ph.id?G:'transparent'}`, borderRadius:7, overflow:'hidden', cursor:'pointer', aspectRatio:'4/3', position:'relative', background:'#12100e' }}><img src={ph.thumbUrl!} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/></button>
+                        ))}
+                      </div>
+                    </div>}
+                    <div style={{ padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 }}>
+                      <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                        <input value={p.title} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,title:e.target.value}:x))} placeholder="Print title" style={{ ...field, flex:'1 1 160px' }}/>
+                        <input value={p.location||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,location:e.target.value}:x))} placeholder="Location" style={{ ...field, flex:'1 1 120px' }}/>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}><span style={{ fontSize:12, color:MT }}>From $</span><input type="number" value={p.fromPrice||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,fromPrice:+e.target.value}:x))} style={{ ...field, width:80 }}/></div>
+                      </div>
+                      <input value={p.externalUrl||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,externalUrl:e.target.value}:x))} placeholder="Store listing URL for this print" style={{ ...field, fontSize:12.5 }}/>
+                      <div style={{ display:'flex', gap:8 }}>
+                        <Flag icon="★" label="Featured" on={p.featured} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,featured:!x.featured}:x))}/>
+                        <Flag icon="●" label="Live on site" on={p.published} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,published:!x.published}:x))}/>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-              <div style={{ fontSize:11.5, color:'rgba(244,241,236,0.42)', display:'flex', alignItems:'center', gap:7 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c8923c" strokeWidth="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
-                Full-resolution print files stay private. Checkout runs through Pixieset.
+                  </div>
+                ))}
+              </div>
+              {prints.length>0&&<button onClick={savePrints} style={{ ...primaryBtn, marginTop:16 }} disabled={loading}>{loading?'Saving…':'Save Prints'}</button>}
+            </div>
+          </div>
+        )}
+
+        {tab==='settings' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:18, maxWidth:620 }}>
+            <div style={{ ...card, padding:28, display:'flex', flexDirection:'column', gap:14 }}>
+              <div style={{ fontFamily:'var(--font-jost)', fontSize:20, marginBottom:2 }}>Contact & Social</div>
+              <div><label style={lbl}>Contact email</label><input value={stEmail} onChange={e=>setStEmail(e.target.value)} style={field}/></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div><label style={lbl}>Instagram username</label><input value={stIg} onChange={e=>setStIg(e.target.value)} style={field}/></div>
+                <div><label style={lbl}>Facebook username</label><input value={stFb} onChange={e=>setStFb(e.target.value)} style={field}/></div>
               </div>
             </div>
-          )}
-
-          {/* SETTINGS */}
-          {screen === 'settings' && (
-            <div style={{ display:'flex', flexDirection:'column', gap:16, animation:'nmfade .5s ease both' }}>
-              <div style={{ ...card, display:'flex', flexDirection:'column', gap:14 }}>
-                <h3 style={h3s}>Contact & Social</h3>
-                <div><label style={fLabel}>Contact email</label><input value={stEmail} onChange={e=>setStEmail(e.target.value)} style={inp} /></div>
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:12 }}>
-                  <div><label style={fLabel}>Instagram username</label><input value={stIg} onChange={e=>setStIg(e.target.value)} style={inp} /></div>
-                  <div><label style={fLabel}>Facebook username</label><input value={stFb} onChange={e=>setStFb(e.target.value)} style={inp} /></div>
-                </div>
-              </div>
-              <div style={{ ...card, display:'flex', flexDirection:'column', gap:14 }}>
-                <h3 style={h3s}>Footer & Store</h3>
-                <div><label style={fLabel}>Footer copyright</label><input value={stCopy} onChange={e=>setStCopy(e.target.value)} style={inp} /></div>
-                <div><label style={fLabel}>Print store URL (Pixieset)</label><input value={stStore} onChange={e=>setStStore(e.target.value)} style={inp} /></div>
-              </div>
-              <div style={{ ...card, display:'flex', flexDirection:'column', gap:14 }}>
-                <h3 style={h3s}>Image & Session</h3>
-                <div><label style={fLabel}>JPEG quality (60–100)</label><input type="number" min={60} max={100} value={stQuality} onChange={e=>setStQuality(+e.target.value)} style={{ ...inp, maxWidth:140 }} /></div>
-                <div style={{ maxWidth:240 }}><label style={fLabel}>Session timeout (minutes)</label><input type="number" value={stSess} onChange={e=>setStSess(+e.target.value)} style={inp} /></div>
-              </div>
-              <div style={{ ...card, display:'flex', flexDirection:'column', gap:12 }}>
-                <h3 style={h3s}>Security</h3>
-                <div style={{ fontSize:13, color:C.muted, lineHeight:1.6, display:'flex', alignItems:'flex-start', gap:9 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c8923c" strokeWidth="1.6" style={{ flexShrink:0, marginTop:2 }}><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
-                  Admin password is stored as a server environment variable. To change it: Vercel → Settings → Environment Variables → ADMIN_PIN → update → Redeploy.
-                </div>
-              </div>
-              <button onClick={saveSettings} className="nm-h" style={saveBtn} disabled={loading}>{loading?'Saving…':'Save Settings'}</button>
+            <div style={{ ...card, padding:28, display:'flex', flexDirection:'column', gap:14 }}>
+              <div style={{ fontFamily:'var(--font-jost)', fontSize:20, marginBottom:2 }}>Footer & Store</div>
+              <div><label style={lbl}>Footer copyright</label><input value={stCopy} onChange={e=>setStCopy(e.target.value)} style={field}/></div>
+              <div><label style={lbl}>Print store URL</label><input value={stStore} onChange={e=>setStStore(e.target.value)} style={field}/></div>
             </div>
-          )}
-
-          </>}
-        </main>
+            <div style={{ ...card, padding:20 }}>
+              <div style={{ fontSize:13, color:MT, lineHeight:1.65, display:'flex', alignItems:'flex-start', gap:9 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={G} strokeWidth="1.6" style={{ flexShrink:0, marginTop:1 }}><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+                To change your admin PIN: Vercel → nicmillerphotography → Settings → Environment Variables → ADMIN_PIN → update → Redeploy.
+              </div>
+            </div>
+            <button onClick={saveSettings} disabled={loading} style={{ ...primaryBtn, alignSelf:'flex-start' }}>{loading?'Saving…':'Save Settings'}</button>
+          </div>
+        )}
       </div>
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

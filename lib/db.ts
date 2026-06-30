@@ -6,6 +6,9 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 const url = process.env.NEON_POSTGRES_PRISMA_URL
   ?? process.env.NEON_DATABASE_URL
   ?? process.env.DATABASE_URL
+  // Placeholder so the client can construct at build time when no env is present.
+  // Real queries still require a valid connection string at runtime (set on Vercel).
+  ?? 'postgresql://placeholder:placeholder@localhost:5432/placeholder'
 
 export const db = globalForPrisma.prisma ?? new PrismaClient({
   datasources: { db: { url } },

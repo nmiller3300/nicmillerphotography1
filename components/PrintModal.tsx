@@ -13,6 +13,7 @@ interface PrintItem {
 
 export default function PrintModal({ print, onClose, storeUrl }: { print: PrintItem; onClose: () => void; storeUrl?: string }) {
   const href = print.externalUrl || storeUrl || '#'
+  const hasDirectLink = !!print.externalUrl
 
   return (
     <div
@@ -41,7 +42,7 @@ export default function PrintModal({ print, onClose, storeUrl }: { print: PrintI
               FROM <span style={{ fontFamily: 'var(--font-jost)', fontSize: '24px', color: '#e3b463', letterSpacing: 0, marginLeft: '4px' }}>${print.from}</span>
             </div>
             <a href={href} target="_blank" rel="noreferrer" className="nm-gold" style={{ padding: '13px 22px', borderRadius: '11px', background: 'linear-gradient(180deg,#d49a40,#b07c2e)', color: '#1a130a', fontWeight: 600, fontSize: '11.5px', letterSpacing: '0.1em', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-manrope)', textDecoration: 'none', display: 'inline-block' }}>
-              CONTINUE&nbsp;TO&nbsp;STORE
+              {hasDirectLink ? 'BUY\u00a0THIS\u00a0PRINT' : 'CONTINUE\u00a0TO\u00a0STORE'}
             </a>
           </div>
         </div>
