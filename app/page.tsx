@@ -16,7 +16,7 @@ const D = {
 async function getData() {
   try {
     const [contentRows, settingsRows, recentRows, heroRows, featuredPrintRows] = await Promise.all([
-      db.$queryRawUnsafe<Array<{key:string,value:string}>>(`SELECT key, value::text as value FROM site_content WHERE key IN ('heroEyebrow','heroTitle','heroSubtitle','aboutBio')`),
+      db.$queryRawUnsafe<Array<{key:string,value:string}>>(`SELECT key, value::text as value FROM site_content WHERE key IN ('heroEyebrow','heroTitle','heroSubtitle','aboutBio','portraitUrl')`),
       db.$queryRawUnsafe<Array<{store_url:string,copyright:string,instagram:string,facebook:string}>>(`SELECT store_url, copyright, instagram, facebook FROM settings WHERE id = 1 LIMIT 1`),
       db.$queryRawUnsafe<Array<{id:number,title:string,location:string,thumb_url:string}>>(`
         SELECT m.id, m.title, m.location, d.url as thumb_url
@@ -49,10 +49,10 @@ async function getData() {
       heroSubtitle:c.heroSubtitle||D.heroSubtitle, aboutBio:c.aboutBio||D.aboutBio,
       storeUrl:s?.store_url||D.storeUrl, copyright:s?.copyright||D.copyright,
       instagram:s?.instagram||'nicmiller.photography', facebook:s?.facebook||'nicmiller.photography',
-      heroUrl, gallery,
+      heroUrl, gallery, portraitUrl: c.portraitUrl || null,
       featuredPrint: fp ? { title:fp.title, location:fp.location||'', from:fp.from_price||0, img:fp.thumb_url||'/featured.jpg', href:fp.external_url||s?.store_url||'#' } : null,
     }
-  } catch { return { ...D, heroUrl:null, gallery:[], featuredPrint:null, instagram:'nicmiller.photography', facebook:'nicmiller.photography' } }
+  } catch { return { ...D, heroUrl:null, gallery:[], featuredPrint:null, instagram:'nicmiller.photography', facebook:'nicmiller.photography', portraitUrl:null } }
 }
 
 export default async function HomePage() {
@@ -169,7 +169,7 @@ export default async function HomePage() {
             )}
           </div>
           <div style={{ display:'flex', gap:'28px', alignItems:'center', flexWrap:'wrap', paddingTop:'34px', borderTop:'1px solid rgba(255,255,255,0.07)' }}>
-            <div style={{ flex:'0 0 150px', width:'150px', aspectRatio:'3/4', borderRadius:'14px', overflow:'hidden', border:'1px solid rgba(255,255,255,0.1)', background:"url('/portrait.jpg') center/cover" }} />
+            <div style={{ flex:'0 0 150px', width:'150px', aspectRatio:'3/4', borderRadius:'14px', overflow:'hidden', border:'1px solid rgba(255,255,255,0.1)', background:`url('${data.portraitUrl || '/portrait.jpg'}') center/cover` }} />
             <div style={{ flex:'1 1 320px', minWidth:'260px' }}>
               <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'16px' }}>
                 <span style={{ fontSize:'12px', letterSpacing:'0.28em', color:'#c8923c' }}>ABOUT&nbsp;NIC</span>
