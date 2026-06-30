@@ -1,88 +1,70 @@
 export const runtime = 'nodejs'
 
-/**
- * app/api/admin/content/route.ts
- *
- * GET  /api/admin/content?keys=heroEyebrow,heroTitle  → { heroEyebrow: '...', ... }
- * GET  /api/admin/content                              → all content rows
- *
- * PATCH /api/admin/content  { key: value, ... }
- *   Accepts any subset of the known content keys. Unknown keys are rejected.
- *
- * Known keys (from the localStorage spec):
- *   heroEyebrow, heroTitle, heroSubtitle, aboutBio, storyTitle, story
- */
-
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 
-const KNOWN_KEYS = [
-  'heroEyebrow',
-  'heroTitle',
-  'heroSubtitle',
-  'aboutBio',
-  'storyTitle',
-  'story',      // stored as JSON array of paragraph strings
-] as const
-
-const patchSchema = z.object({
-  heroEyebrow: z.string().optional(),
-  heroTitle: z.string().optional(),
-  heroSubtitle: z.string().optional(),
-  aboutBio: z.string().optional(),
-  storyTitle: z.string().optional(),
-  story: z.array(z.string()).optional(),
-  heroImgMediaId: z.number().nullable().optional(),
-}).strict()
+// Keys that store plain strings
+const STRING_KEYS = ['heroEyebrow','heroTitle','heroSubtitle','aboutBio','storyTitle','portraitUrl','storyImageUrl']
+// Keys that store JSON arrays
+const ARRAY_KEYS = ['story']
 
 export async function GET(request: NextRequest) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const keysParam = request.nextUrl.searchParams.get('keys')
-  const keysFilter = keysParam ? keysParam.split(',').filter(Boolean) : null
+  try {
+    const keysParam = request.nextUrl.searchParams.get('keys')
+    const keysFilter = keysParam ? keysParam.split(',').filter(Boolean) : null
 
-  const rows = await db.siteContent.findMany({
-    where: keysFilter ? { key: { in: keysFilter } } : undefined,
-  })
+    const rows = keysFilter
+      ? await db.$queryRawUnsafe<Array<{key:string,value:string}>>(
+          `SELECT key, value::text as value FROM site_content WHERE key IN (${keysFilter.map(k=>`'${k.replace(/'/g,"''")}'`).join(',')})`
+        )
+      : await db.$queryRawUnsafe<Array<{key:string,value:string}>>(`SELECT key, value::text as value FROM site_content`)
 
-  const content = Object.fromEntries(rows.map((r) => [r.key, r.value]))
-  return NextResponse.json(content)
+    const content: Record<string, unknown> = {}
+    for (const r of rows) {
+      const raw = r.value
+      if (ARRAY_KEYS.includes(r.key)) {
+        try { content[r.key] = JSON.parse(raw) } catch { content[r.key] = [] }
+      } else {
+        // strip surrounding quotes from JSON-stored strings
+        try { content[r.key] = JSON.parse(raw) } catch { content[r.key] = raw?.replace(/^"|"$/g,'') }
+      }
+    }
+    return NextResponse.json(content)
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
 }
 
 export async function PATCH(request: NextRequest) {
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: unknown
+  let body: Record<string, unknown>
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const parsed = patchSchema.safeParse(body)
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
+  try {
+    const updated: string[] = []
+    for (const [key, value] of Object.entries(body)) {
+      if (value === undefined) continue
+      if (!STRING_KEYS.includes(key) && !ARRAY_KEYS.includes(key)) continue // ignore unknown keys silently
+
+      // Store as JSON text so both strings and arrays round-trip cleanly
+      const jsonValue = JSON.stringify(value).replace(/'/g, "''")
+      await db.$executeRawUnsafe(`
+        INSERT INTO site_content (key, value) VALUES ('${key}', '${jsonValue}')
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+      `)
+      updated.push(key)
+    }
+    return NextResponse.json({ ok: true, updated })
+  } catch (err) {
+    console.error('Content PATCH error:', err)
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
-
-  // Upsert each provided key
-  const updates = Object.entries(parsed.data).filter(([, v]) => v !== undefined)
-
-  await Promise.all(
-    updates.map(([key, value]) =>
-      db.siteContent.upsert({
-        where: { key },
-        create: { key, value: value as never },
-        update: { value: value as never },
-      }),
-    ),
-  )
-
-  return NextResponse.json({ ok: true, updated: updates.map(([k]) => k) })
-}
-
-// Also export available keys for the admin panel to enumerate
-export async function OPTIONS() {
-  return NextResponse.json({ keys: KNOWN_KEYS })
 }

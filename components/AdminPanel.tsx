@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useCallback, DragEvent } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 
-type Tab = 'photos' | 'collections' | 'content' | 'settings'
+type Tab = 'photos' | 'collections' | 'prints' | 'content' | 'settings'
 
 interface Photo {
   id: number; title: string; location?: string|null; status: string
   featured?: boolean; printEnabled?: boolean; homepage?: boolean
   orientation?: string; thumbUrl?: string|null
+  caption?: string; alt?: string; camera?: string; captureDate?: string; description?: string
 }
 interface Msg { id: number; name: string; email: string; body: string; status: string; createdAt: string }
 interface PrintItem {
@@ -146,7 +147,7 @@ export default function AdminPanel() {
 
   function openEditor(p: Photo) {
     setEditing(p)
-    setEf({ title:p.title, location:p.location||'', caption:'', alt:'', captureDate:'', camera:'', description:'', featured:p.featured||false, printEnabled:p.printEnabled||false, homepage:p.homepage||false })
+    setEf({ title:p.title, location:p.location||'', caption:p.caption||'', alt:p.alt||'', captureDate:p.captureDate||'', camera:p.camera||'', description:p.description||'', featured:p.featured||false, printEnabled:p.printEnabled||false, homepage:p.homepage||false })
   }
   async function savePhoto(status: 'draft'|'published') {
     if (!editing) return
@@ -317,6 +318,7 @@ export default function AdminPanel() {
           <div style={{ flex:1, display:'flex', justifyContent:'center', gap:5 }}>
             <button onClick={()=>setTab('photos')} style={tabStyle(tab==='photos')}>Photos</button>
             <button onClick={()=>setTab('collections')} style={tabStyle(tab==='collections')}>Series</button>
+            <button onClick={()=>setTab('prints')} style={tabStyle(tab==='prints')}>Print Shop</button>
             <button onClick={()=>setTab('content')} style={tabStyle(tab==='content')}>Content {newMsgs>0&&<span style={{ marginLeft:5, padding:'1px 7px', borderRadius:8, background:G, color:'#1a130a', fontSize:10, fontWeight:700 }}>{newMsgs}</span>}</button>
             <button onClick={()=>setTab('settings')} style={tabStyle(tab==='settings')}>Settings</button>
           </div>
@@ -703,50 +705,128 @@ export default function AdminPanel() {
                 <div style={{ display:'flex', gap:10 }}><a href={`mailto:${openMsg.email}`} style={{ ...primaryBtn, textDecoration:'none' }}>Reply by email</a><button onClick={()=>setOpenMsg(null)} style={ghostBtn}>Close</button></div>
               </div>}
             </div>
+          </div>
+        )}
 
-            <div style={{ ...card, padding:28 }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                <div style={{ fontFamily:'var(--font-jost)', fontSize:20 }}>Print Shop</div>
-                <button onClick={()=>setPrints(p=>[...p,{id:Date.now(),title:'New Print',location:'',fromPrice:295,featured:false,published:false,externalUrl:null,mediaId:null}])} style={ghostBtn}>+ Add listing</button>
+        {/* ══════════════════════ PRINT SHOP TAB ══════════════════════════ */}
+        {tab==='prints' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+              <div>
+                <div style={{ fontFamily:'var(--font-jost)', fontSize:22 }}>Print Shop</div>
+                <div style={{ fontSize:13, color:MT, marginTop:3, maxWidth:560, lineHeight:1.6 }}>Manage which photos are sold as prints. Each listing points to its Pixieset checkout page. The <span style={{ color:GL }}>★ featured</span> print appears in the hero card on your homepage.</div>
               </div>
-              <div style={{ fontSize:12.5, color:MT, marginBottom:20, lineHeight:1.6 }}>The print marked <span style={{ color:GL }}>★ Featured</span> shows in the big card on your homepage and at the top of the Print Shop page. Only one should be featured at a time. <span style={{ color:GL }}>● Live on site</span> controls whether it appears at all.</div>
-              {prints.length===0&&<div style={{ fontSize:13, color:MT }}>No listings yet.</div>}
-              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-                {prints.map(p=>(
-                  <div key={p.id} style={{ borderRadius:13, border:`1px solid ${BR}`, background:'rgba(255,255,255,0.02)', overflow:'hidden' }}>
-                    <div style={{ display:'flex', gap:12, alignItems:'center', padding:'12px 16px', borderBottom:`1px solid ${BR}` }}>
-                      {p.thumbUrl?<div style={{ width:60, height:45, flexShrink:0, borderRadius:8, background:`url('${p.thumbUrl}') center/cover`, border:`1px solid ${BR}` }}/>:<div style={{ width:60, height:45, flexShrink:0, borderRadius:8, background:'rgba(255,255,255,0.04)', border:`1px dashed rgba(255,255,255,0.1)`, display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.4"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>}
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:12.5, fontWeight:600, marginBottom:4 }}>{p.thumbUrl?'Photo selected':'No photo selected'}</div>
-                        <button onClick={()=>setPickerOpen(pickerOpen===p.id?null:p.id)} style={{ padding:'5px 12px', borderRadius:7, border:`1px solid ${pickerOpen===p.id?'rgba(200,146,60,0.4)':BR}`, background:pickerOpen===p.id?'rgba(200,146,60,0.1)':'rgba(255,255,255,0.03)', color:pickerOpen===p.id?GL:MT, fontSize:12, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>{p.thumbUrl?'↕ Change photo':'+ Select from library'}</button>
-                      </div>
-                      <button onClick={()=>setPrints(prev=>prev.filter(x=>x.id!==p.id))} style={{ background:'none', border:'none', color:'rgba(224,90,90,0.6)', fontSize:12, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>Remove</button>
+              <button onClick={()=>setPrints(p=>[...p,{id:Date.now(),title:'New Print',location:'',fromPrice:225,featured:false,published:false,externalUrl:null,mediaId:null}])} style={{ ...primaryBtn, display:'flex', alignItems:'center', gap:7, whiteSpace:'nowrap' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
+                Add listing
+              </button>
+            </div>
+
+            {/* Stats */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:12 }}>
+              {[
+                ['Total listings', prints.length, '#8aa0c8'],
+                ['Live on site', prints.filter(p=>p.published).length, '#5fb87a'],
+                ['Featured', prints.filter(p=>p.featured).length, G],
+              ].map(([label,count,color])=>(
+                <div key={label as string} style={{ ...card, padding:'16px 20px', display:'flex', alignItems:'center', gap:12 }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background:color as string, flexShrink:0 }}/>
+                  <span style={{ flex:1, fontSize:12.5, color:MT }}>{label}</span>
+                  <span style={{ fontFamily:'var(--font-jost)', fontSize:24, lineHeight:1 }}>{count as number}</span>
+                </div>
+              ))}
+            </div>
+
+            {prints.length>1 && prints.filter(p=>p.featured).length>1 && (
+              <div style={{ padding:'10px 16px', borderRadius:10, background:'rgba(224,90,90,0.08)', border:'1px solid rgba(224,90,90,0.25)', fontSize:12.5, color:'#e0917a' }}>
+                You have more than one featured print. Only the first will show on the homepage — pick just one.
+              </div>
+            )}
+
+            {prints.length===0 && (
+              <div style={{ ...card, padding:'48px 24px', textAlign:'center' }}>
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.4" style={{ margin:'0 auto 14px', display:'block' }}><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg>
+                <div style={{ fontSize:14.5, color:T, marginBottom:6 }}>No prints listed yet</div>
+                <div style={{ fontSize:13, color:MT, maxWidth:400, margin:'0 auto' }}>Click &quot;Add listing&quot; to put a photo up for sale. You&#39;ll pick the photo, set a starting price, and paste its Pixieset checkout link.</div>
+              </div>
+            )}
+
+            {/* Listings */}
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              {prints.map((p,idx)=>(
+                <div key={p.id} style={{ ...card, overflow:'hidden' }}>
+                  {/* Row header: thumbnail + identity + status */}
+                  <div style={{ display:'flex', gap:14, alignItems:'center', padding:'16px 18px', borderBottom:`1px solid ${BR}` }}>
+                    <span style={{ fontFamily:'var(--font-jost)', fontSize:15, color:MT, width:20, textAlign:'center', flexShrink:0 }}>{idx+1}</span>
+                    {p.thumbUrl
+                      ? <div style={{ width:72, height:54, flexShrink:0, borderRadius:9, background:`url('${p.thumbUrl}') center/cover`, border:`1px solid ${BR}` }}/>
+                      : <div style={{ width:72, height:54, flexShrink:0, borderRadius:9, background:'rgba(255,255,255,0.04)', border:`1px dashed rgba(255,255,255,0.12)`, display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.4"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.7"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg></div>
+                    }
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:15, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.title||'Untitled print'}</div>
+                      <div style={{ fontSize:12.5, color:MT, marginTop:2 }}>{p.location||'No location'} · from ${p.fromPrice||0}</div>
                     </div>
-                    {pickerOpen===p.id && <div style={{ padding:12, borderBottom:`1px solid ${BR}`, background:'rgba(0,0,0,0.18)' }}>
-                      <div style={{ fontSize:11, color:MT, marginBottom:8 }}>Select photo:</div>
-                      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(80px,1fr))', gap:6, maxHeight:200, overflowY:'auto' }}>
-                        {photos.filter(ph=>ph.thumbUrl).map(ph=>(
-                          <button key={ph.id} onClick={()=>{setPrints(prev=>prev.map(x=>x.id===p.id?{...x,thumbUrl:ph.thumbUrl,mediaId:ph.id}:x));setPickerOpen(null)}} style={{ padding:0, border:`2px solid ${p.mediaId===ph.id?G:'transparent'}`, borderRadius:7, overflow:'hidden', cursor:'pointer', aspectRatio:'4/3', position:'relative', background:'#12100e' }}><img src={ph.thumbUrl!} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/></button>
-                        ))}
-                      </div>
-                    </div>}
-                    <div style={{ padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 }}>
-                      <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-                        <input value={p.title} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,title:e.target.value}:x))} placeholder="Print title" style={{ ...field, flex:'1 1 160px' }}/>
-                        <input value={p.location||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,location:e.target.value}:x))} placeholder="Location" style={{ ...field, flex:'1 1 120px' }}/>
-                        <div style={{ display:'flex', alignItems:'center', gap:6 }}><span style={{ fontSize:12, color:MT }}>From $</span><input type="number" value={p.fromPrice||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,fromPrice:+e.target.value}:x))} style={{ ...field, width:80 }}/></div>
-                      </div>
-                      <input value={p.externalUrl||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,externalUrl:e.target.value}:x))} placeholder="Store listing URL for this print" style={{ ...field, fontSize:12.5 }}/>
-                      <div style={{ display:'flex', gap:8 }}>
-                        <Flag icon="★" label="Featured" on={p.featured} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,featured:!x.featured}:x))}/>
-                        <Flag icon="●" label="Live on site" on={p.published} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,published:!x.published}:x))}/>
-                      </div>
+                    <div style={{ display:'flex', gap:7, alignItems:'center', flexShrink:0 }}>
+                      {p.featured && <span style={{ fontSize:10.5, padding:'4px 10px', borderRadius:6, background:'rgba(200,146,60,0.16)', color:GL, fontWeight:600 }}>★ Featured</span>}
+                      <span style={{ fontSize:10.5, padding:'4px 10px', borderRadius:6, background:p.published?'rgba(95,184,122,0.15)':'rgba(255,255,255,0.05)', color:p.published?'#5fb87a':MT, fontWeight:600 }}>{p.published?'● Live':'Draft'}</span>
                     </div>
                   </div>
-                ))}
-              </div>
-              {prints.length>0&&<button onClick={savePrints} style={{ ...primaryBtn, marginTop:16 }} disabled={loading}>{loading?'Saving…':'Save Prints'}</button>}
+
+                  {/* Photo picker */}
+                  <div style={{ padding:'14px 18px', borderBottom:`1px solid ${BR}`, display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+                    <button onClick={()=>setPickerOpen(pickerOpen===p.id?null:p.id)} style={{ padding:'8px 14px', borderRadius:8, border:`1px solid ${pickerOpen===p.id?'rgba(200,146,60,0.4)':BR}`, background:pickerOpen===p.id?'rgba(200,146,60,0.1)':'rgba(255,255,255,0.03)', color:pickerOpen===p.id?GL:T, fontSize:12.5, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>{p.thumbUrl?'↕ Change photo':'+ Choose photo from library'}</button>
+                    {p.thumbUrl && <span style={{ fontSize:11.5, color:MT }}>Title & location auto-fill from the photo — edit below if needed.</span>}
+                  </div>
+                  {pickerOpen===p.id && (
+                    <div style={{ padding:14, borderBottom:`1px solid ${BR}`, background:'rgba(0,0,0,0.18)' }}>
+                      <div style={{ fontSize:11.5, color:MT, marginBottom:10 }}>Select a photo:</div>
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(96px,1fr))', gap:8, maxHeight:260, overflowY:'auto' }}>
+                        {photos.filter(ph=>ph.thumbUrl).map(ph=>(
+                          <button key={ph.id} onClick={()=>{
+                            setPrints(prev=>prev.map(x=>x.id===p.id?{
+                              ...x,
+                              thumbUrl:ph.thumbUrl, mediaId:ph.id,
+                              // Auto-fill title/location from the photo if they're still default/empty
+                              title: (!x.title || x.title==='New Print') ? ph.title : x.title,
+                              location: (!x.location) ? (ph.location||'') : x.location,
+                            }:x))
+                            setPickerOpen(null)
+                          }} style={{ padding:0, border:`2px solid ${p.mediaId===ph.id?G:'transparent'}`, borderRadius:8, overflow:'hidden', cursor:'pointer', position:'relative', background:'#12100e', textAlign:'left' }}>
+                            <div style={{ position:'relative', aspectRatio:'4/3' }}>
+                              <img src={ph.thumbUrl!} alt="" loading="lazy" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>
+                              {p.mediaId===ph.id && <div style={{ position:'absolute', inset:0, background:'rgba(200,146,60,0.25)', display:'flex', alignItems:'center', justifyContent:'center' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={GL} strokeWidth="2.5"><path d="m5 12 5 5L20 6"/></svg></div>}
+                            </div>
+                            <div style={{ padding:'6px 8px', fontSize:11, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{ph.title}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Detail fields */}
+                  <div style={{ padding:'16px 18px', display:'flex', flexDirection:'column', gap:13 }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'2fr 1.5fr auto', gap:11 }}>
+                      <div><label style={lbl}>Print title</label><input value={p.title} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,title:e.target.value}:x))} placeholder="e.g. Golden Orb Weaver" style={field}/></div>
+                      <div><label style={lbl}>Location</label><input value={p.location||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,location:e.target.value}:x))} placeholder="e.g. Chattahoochee River" style={field}/></div>
+                      <div><label style={lbl}>From price</label><div style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ fontSize:13, color:MT }}>$</span><input type="number" value={p.fromPrice||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,fromPrice:+e.target.value}:x))} style={{ ...field, width:90 }}/></div></div>
+                    </div>
+                    <div><label style={lbl}>Pixieset checkout link</label><input value={p.externalUrl||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,externalUrl:e.target.value}:x))} placeholder="https://nicmillerphotography.pixieset.com/..." style={{ ...field, fontSize:12.5 }}/></div>
+                    <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                      <Flag icon="★" label="Featured on homepage" on={p.featured} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,featured:!x.featured}:x))}/>
+                      <Flag icon="●" label="Live on site" on={p.published} onClick={()=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,published:!x.published}:x))}/>
+                      <button onClick={()=>{ if(confirm('Remove this listing?')) setPrints(prev=>prev.filter(x=>x.id!==p.id)) }} style={{ marginLeft:'auto', background:'none', border:'none', color:'rgba(224,90,90,0.65)', fontSize:12.5, cursor:'pointer', fontFamily:'var(--font-manrope)' }}>Remove listing</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
+
+            {prints.length>0 && (
+              <div style={{ display:'flex', gap:12, alignItems:'center' }}>
+                <button onClick={savePrints} style={primaryBtn} disabled={loading}>{loading?'Saving…':'Save all listings'}</button>
+                <span style={{ fontSize:12, color:MT }}>Changes aren&#39;t live until you save.</span>
+              </div>
+            )}
           </div>
         )}
 

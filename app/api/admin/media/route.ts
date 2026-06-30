@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       }>>(
         `SELECT m.id, m.title, m.location, m.status, m.orientation,
                 m.featured, m.print_enabled, m.homepage, m.created_at,
+                m.caption, m.alt, m.camera, m.capture_date, m.description,
                 d.url as thumb_url
          FROM media m
          LEFT JOIN derivatives d ON d.media_id = m.id
@@ -70,6 +71,11 @@ export async function GET(request: NextRequest) {
         homepage:     m.homepage,
         thumbUrl:     m.thumb_url,
         createdAt:    m.created_at,
+        caption:      m.caption ?? '',
+        alt:          m.alt ?? '',
+        camera:       m.camera ?? '',
+        captureDate:  m.capture_date ?? '',
+        description:  m.description ?? '',
       })),
     })
   } catch (err) {
