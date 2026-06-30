@@ -24,7 +24,7 @@ async function getData() {
     const fp = prints.find(p => p.featured) || prints[0] || null
     const rest = fp ? prints.filter(p => p.id !== fp.id) : prints
     const toPrint = (p: typeof prints[0]) => ({
-      t: p.title, loc: p.location||'', img: p.thumb_url||'/featured.jpg',
+      id: p.id, t: p.title, loc: p.location||'', img: p.thumb_url||'/featured.jpg',
       from: p.from_price||0, ed: p.edition||'', paper: p.paper||'',
       sizes:[], featured: p.featured, externalUrl: p.external_url||null,
     })
@@ -99,7 +99,7 @@ export default async function PrintsPage() {
 
         {!featured && rest.length === 0 && (
           <div style={{ textAlign:'center', padding:'80px 20px', color:'rgba(244,241,236,0.3)', fontSize:14 }}>
-            Add prints in the admin panel — Content → Print Shop.
+            Add prints in the admin panel → Print Shop tab.
           </div>
         )}
 

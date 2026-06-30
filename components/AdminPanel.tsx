@@ -17,6 +17,7 @@ interface PrintItem {
   id: number; title: string; location?: string|null; fromPrice?: number|null
   featured: boolean; published: boolean; thumbUrl?: string|null
   externalUrl?: string|null; mediaId?: number|null
+  edition?: string|null; paper?: string|null
 }
 interface Collection {
   id: number; title: string; slug: string; description?: string|null
@@ -809,6 +810,10 @@ export default function AdminPanel() {
                       <div><label style={lbl}>Print title</label><input value={p.title} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,title:e.target.value}:x))} placeholder="e.g. Golden Orb Weaver" style={field}/></div>
                       <div><label style={lbl}>Location</label><input value={p.location||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,location:e.target.value}:x))} placeholder="e.g. Chattahoochee River" style={field}/></div>
                       <div><label style={lbl}>From price</label><div style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ fontSize:13, color:MT }}>$</span><input type="number" value={p.fromPrice||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,fromPrice:+e.target.value}:x))} style={{ ...field, width:90 }}/></div></div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:11 }}>
+                      <div><label style={lbl}>Edition (e.g. Limited Edition)</label><input value={p.edition||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,edition:e.target.value}:x))} placeholder="Limited Edition" style={field}/></div>
+                      <div><label style={lbl}>Paper (e.g. Hahnemühle Photo Rag®)</label><input value={p.paper||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,paper:e.target.value}:x))} placeholder="Hahnemühle Photo Rag®" style={field}/></div>
                     </div>
                     <div><label style={lbl}>Pixieset checkout link</label><input value={p.externalUrl||''} onChange={e=>setPrints(prev=>prev.map(x=>x.id===p.id?{...x,externalUrl:e.target.value}:x))} placeholder="https://nicmillerphotography.pixieset.com/..." style={{ ...field, fontSize:12.5 }}/></div>
                     <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>

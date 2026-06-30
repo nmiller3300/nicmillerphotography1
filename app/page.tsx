@@ -22,7 +22,8 @@ async function getData() {
         SELECT m.id, m.title, m.location, d.url as thumb_url
         FROM media m
         LEFT JOIN derivatives d ON d.media_id = m.id AND d.format = 'webp' AND d.width = 960
-        WHERE m.status = 'published' ORDER BY m.created_at DESC LIMIT 6
+        WHERE m.status = 'published'
+        ORDER BY m.sort_order ASC, m.featured DESC, m.created_at DESC LIMIT 6
       `),
       db.$queryRawUnsafe<Array<{url:string}>>(`
         SELECT d.url FROM media m

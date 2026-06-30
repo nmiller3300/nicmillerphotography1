@@ -40,7 +40,10 @@ export async function GET(request: NextRequest) {
     await db.$executeRawUnsafe(`ALTER TABLE media ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`)
     await db.$executeRawUnsafe(`ALTER TABLE collections ADD COLUMN IF NOT EXISTS slug TEXT`)
     await db.$executeRawUnsafe(`ALTER TABLE collections ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`)
-    // Backfill sort_order from created_at so existing photos have a stable initial order
+    await db.$executeRawUnsafe(`ALTER TABLE prints ADD COLUMN IF NOT EXISTS edition TEXT`)
+    await db.$executeRawUnsafe(`ALTER TABLE prints ADD COLUMN IF NOT EXISTS paper TEXT`)
+    await db.$executeRawUnsafe(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS facebook TEXT`)
+    // Backfill sort_order from created_at for any photos that still have sort_order = 0
     await db.$executeRawUnsafe(`UPDATE media SET sort_order = sub.rn FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rn FROM media WHERE sort_order = 0) sub WHERE media.id = sub.id AND media.sort_order = 0`)
     results.push('migrations')
 

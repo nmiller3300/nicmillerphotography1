@@ -38,14 +38,18 @@ export default async function PhotoDetailPage({ params }: { params: Promise<{ id
     if (!rows.length) notFound()
     const photo = rows[0]
 
-    // Prev / next
-    const nav = await db.$queryRawUnsafe<Array<{id:number,title:string}>>(`
-      (SELECT id, title FROM media WHERE status='published' AND id < ${mediaId} ORDER BY id DESC LIMIT 1)
+    // Prev / next — navigate by sort_order, not id
+    const nav = await db.$queryRawUnsafe<Array<{id:number,title:string,dir:string}>>(`
+      SELECT id, title, 'prev' as dir FROM media
+      WHERE status='published' AND sort_order < (SELECT sort_order FROM media WHERE id=${mediaId})
+      ORDER BY sort_order DESC LIMIT 1
       UNION ALL
-      (SELECT id, title FROM media WHERE status='published' AND id > ${mediaId} ORDER BY id ASC  LIMIT 1)
+      SELECT id, title, 'next' as dir FROM media
+      WHERE status='published' AND sort_order > (SELECT sort_order FROM media WHERE id=${mediaId})
+      ORDER BY sort_order ASC LIMIT 1
     `)
-    const prev = nav.find(n => n.id < mediaId) || null
-    const next = nav.find(n => n.id > mediaId) || null
+    const prev = nav.find(n => n.dir === 'prev') || null
+    const next = nav.find(n => n.dir === 'next') || null
 
     return (
       <div style={{ background:'#0b0a09', minHeight:'100vh', color:'#f4f1ec' }}>

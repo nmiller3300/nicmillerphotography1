@@ -64,7 +64,7 @@ export default async function StoryPage() {
         </div>
         <div style={{ marginTop:'44px', paddingTop:'30px', borderTop:'1px solid rgba(255,255,255,0.08)', display:'flex', gap:'14px', flexWrap:'wrap' }}>
           <Link href="/portfolio" className="nm-gold" style={{ padding:'14px 24px', borderRadius:'12px', background:'linear-gradient(180deg,#d49a40,#b07c2e)', color:'#1a130a', fontWeight:600, fontSize:'12px', letterSpacing:'0.14em', border:'none', fontFamily:'var(--font-manrope)' }}>VIEW THE PORTFOLIO</Link>
-          <Link href="/contact" className="nm-hl" style={{ padding:'14px 24px', borderRadius:'12px', border:'1px solid rgba(255,255,255,0.25)', color:'#f4f1ec', fontSize:'12px', letterSpacing:'0.14em', background:'none', fontFamily:'var(--font-manrope)' }}>WORK WITH ME</Link>
+          <Link href="/contact" className="nm-hl" style={{ padding:'14px 24px', borderRadius:'12px', border:'1px solid rgba(255,255,255,0.25)', color:'#f4f1ec', fontSize:'12px', letterSpacing:'0.14em', background:'none', fontFamily:'var(--font-manrope)' }}>GET IN TOUCH</Link>
         </div>
       </div>
       <Footer copyright={data.copyright} instagram={data.instagram} facebook={data.facebook} />

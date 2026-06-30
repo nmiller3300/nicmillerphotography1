@@ -45,10 +45,12 @@ export async function PATCH(request: NextRequest) {
         const published = item.published ? 'true' : 'false'
         const extUrl    = item.externalUrl ? `'${String(item.externalUrl).replace(/'/g,"''")}'` : 'NULL'
         const mediaId   = item.mediaId || item.media_id ? Number(item.mediaId||item.media_id) : 'NULL'
+        const edition   = item.edition ? `'${String(item.edition).replace(/'/g,"''")}'` : 'NULL'
+        const paper     = item.paper   ? `'${String(item.paper).replace(/'/g,"''")}'`   : 'NULL'
 
         await db.$executeRawUnsafe(`
-          INSERT INTO prints (title, location, from_price, featured, published, external_url, media_id)
-          VALUES ('${title}', ${location}, ${fromPrice}, ${featured}, ${published}, ${extUrl}, ${mediaId})
+          INSERT INTO prints (title, location, from_price, featured, published, external_url, media_id, edition, paper)
+          VALUES ('${title}', ${location}, ${fromPrice}, ${featured}, ${published}, ${extUrl}, ${mediaId}, ${edition}, ${paper})
         `)
       } else {
         // Existing print — update it
@@ -60,6 +62,8 @@ export async function PATCH(request: NextRequest) {
         if (item.featured    !== undefined) sets.push(`featured = ${!!item.featured}`)
         if (item.published   !== undefined) sets.push(`published = ${!!item.published}`)
         if (item.externalUrl !== undefined) sets.push(`external_url = ${item.externalUrl ? `'${String(item.externalUrl).replace(/'/g,"''")}'` : 'NULL'}`)
+        if (item.edition     !== undefined) sets.push(`edition = ${item.edition ? `'${String(item.edition).replace(/'/g,"''")}'` : 'NULL'}`)
+        if (item.paper       !== undefined) sets.push(`paper = ${item.paper ? `'${String(item.paper).replace(/'/g,"''")}'` : 'NULL'}`)
         const mediaId = item.mediaId || item.media_id
         if (mediaId !== undefined) sets.push(`media_id = ${mediaId ? Number(mediaId) : 'NULL'}`)
         if (sets.length > 0) {
