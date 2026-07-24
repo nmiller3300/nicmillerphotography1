@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import Image from 'next/image'
 
+const bookingUrl = 'https://nicmillerphotography-booking.vercel.app'
+
 export default function Nav() {
   const path = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -21,6 +23,16 @@ export default function Nav() {
   const navBtn: React.CSSProperties = {
     background: 'none', border: 'none', cursor: 'pointer',
     fontFamily: 'var(--font-manrope)', fontSize: '12px', letterSpacing: '0.2em',
+  }
+
+  const bookingBtn: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    minHeight: '38px', padding: '0 16px', borderRadius: '999px',
+    border: '1px solid rgba(227,180,99,0.7)',
+    background: 'linear-gradient(135deg, rgba(227,180,99,0.2), rgba(181,107,50,0.16))',
+    color: '#f7d89c', textDecoration: 'none', whiteSpace: 'nowrap',
+    fontFamily: 'var(--font-manrope)', fontSize: '11px', fontWeight: 600,
+    letterSpacing: '0.16em', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)',
   }
 
   return (
@@ -41,9 +53,10 @@ export default function Nav() {
           </Link>
 
           {/* Desktop right links */}
-          <div style={{ display: 'flex', gap: '28px', flex: 1, minWidth: 0, justifyContent: 'flex-end', alignItems: 'center' }} className="desknav">
+          <div style={{ display: 'flex', gap: '22px', flex: 1, minWidth: 0, justifyContent: 'flex-end', alignItems: 'center' }} className="desknav">
             <Link href="/about" style={{ ...navBtn, color: nc('/about') }} className="nm-hl">ABOUT</Link>
             <Link href="/contact" style={{ ...navBtn, color: nc('/contact') }} className="nm-hl">CONTACT</Link>
+            <a href={bookingUrl} style={bookingBtn} className="nm-hl">BOOK A SESSION</a>
           </div>
 
           {/* Mobile hamburger */}
@@ -61,6 +74,13 @@ export default function Nav() {
           {[['/', 'Home'], ['/portfolio', 'Portfolio'], ['/prints', 'Print Shop'], ['/about', 'About'], ['/contact', 'Contact']].map(([href, label]) => (
             <Link key={href} href={href} style={mLink} onClick={() => setMenuOpen(false)}>{label}</Link>
           ))}
+          <a
+            href={bookingUrl}
+            style={{ ...mLink, marginTop: '6px', border: '1px solid rgba(227,180,99,0.55)', background: 'linear-gradient(135deg, rgba(227,180,99,0.18), rgba(181,107,50,0.14))', color: '#f7d89c', textDecoration: 'none', fontWeight: 600 }}
+            onClick={() => setMenuOpen(false)}
+          >
+            Book a Session →
+          </a>
         </div>
       )}
     </>
